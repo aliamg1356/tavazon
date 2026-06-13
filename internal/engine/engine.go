@@ -37,6 +37,14 @@ var stoppedPollInterval = time.Second
 // tests can shorten it.
 var samplingInterval = 2 * time.Second
 
+// maxCycleDuration caps a single traffic cycle so the loop returns promptly to
+// re-evaluate the curve and re-size the worker pool, keeping the manufactured
+// traffic shaped by the curve even when the deficit (and thus the budget) is
+// enormous. 30s keeps a high duty cycle against the 5-30s inter-cycle sleep
+// while re-reading the (hourly-scale) curve often enough, and bounds the
+// dashboard "Stop" latency to ≤30s. It is a var so tests can adjust it.
+var maxCycleDuration = 30 * time.Second
+
 // cycleRunner is the slice of the uploader the engine depends on.
 // *uploader.Uploader satisfies it; tests substitute a stub.
 type cycleRunner interface {
@@ -168,7 +176,14 @@ func (e *Engine) runCycle(ctx context.Context) {
 		workers = e.workerCount(cfg, intensity)
 		if workers > 0 {
 			budget := int64(float64(deficit) * cfg.Uploader.CycleBudgetFraction)
-			sent = e.uploader.RunCycle(ctx, budget, workers)
+			// Bound the cycle so the loop returns to re-read the traffic curve
+			// (and re-size the worker pool) regularly. Without this, one
+			// volume-mode cycle whose budget is terabytes would run for hours
+			// with the worker count — and thus the throughput — frozen at its
+			// start-of-cycle value, so the curve never shapes the output.
+			cctx, cancel := context.WithTimeout(ctx, maxCycleDuration)
+			sent = e.uploader.RunCycle(cctx, budget, workers)
+			cancel()
 			e.prevWorkers = workers
 			// Re-read so the tracked totals reflect the just-sent traffic
 			// immediately (docs/project.md §6.11).

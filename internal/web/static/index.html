@@ -49,6 +49,8 @@
   .charthint{font-size:11px;color:var(--dim)}
   #chart{width:100%;height:auto;touch-action:none;cursor:crosshair;
     border:1px solid var(--line);border-radius:6px;background:#06090d}
+  #cmpChart{width:100%;height:auto;border:1px solid var(--line);
+    border-radius:6px;background:#06090d}
   .speedlegend{display:flex;gap:20px;align-items:center;flex-wrap:wrap;
     margin-top:8px;font-size:13px;color:var(--dim)}
   .speedlegend i{display:inline-block;width:14px;height:3px;border-radius:2px;
@@ -111,6 +113,12 @@
     </div>
     <canvas id="chart" width="1140" height="240"></canvas>
     <div class="speedlegend" id="speedLegend"></div>
+  </div>
+
+  <div class="panel">
+    <h2>Fake upload vs traffic curve — 24h</h2>
+    <canvas id="cmpChart" width="1140" height="200"></canvas>
+    <div class="speedlegend" id="cmpLegend"></div>
   </div>
 
   <div class="panel">
@@ -408,6 +416,51 @@ window.addEventListener("mouseup", ()=>{ chDrag=null; });
 CH.addEventListener("mouseleave", ()=>{ if(!chDrag){ chHover=-1; drawChart(); } });
 CH.addEventListener("dblclick", ()=>{ chView.span=150; chSetLive(true); chHover=-1; drawChart(); });
 $("chartLive").addEventListener("click", ()=>{ if(!chView.follow){ chSetLive(true); drawChart(); } });
+
+/* ---- 24h comparison: actual fake upload (from metering history) vs the
+   desired traffic curve, on a fixed hour-of-day axis so you can see whether the
+   manufactured traffic tracks the curve. Both are drawn shape-aligned: the
+   desired curve is scaled to the actual peak. ---- */
+const TEHRAN_OFFSET_H = 3.5; // Asia/Tehran is UTC+3:30 (no DST since 2022)
+function loadCompare(){
+  const to = Math.floor(Date.now()/1000), from = to - 26*3600;
+  api(`/api/history?from=${from}&to=${to}`)
+    .then(h=>drawCompare(h.buckets||[])).catch(()=>drawCompare([]));
+}
+function drawCompare(buckets){
+  const c=$("cmpChart"), x=c.getContext("2d"), W=c.width, H=c.height;
+  const p={l:48,r:12,t:14,b:22}, pw=W-p.l-p.r, ph=H-p.t-p.b;
+  x.clearRect(0,0,W,H);
+  // average actual fake-upload rate (bytes/s) per Tehran hour-of-day
+  const sum=new Array(24).fill(0), cnt=new Array(24).fill(0);
+  buckets.forEach(b=>{
+    const d=new Date(b.t);
+    const hod=Math.floor(d.getUTCHours()+d.getUTCMinutes()/60+TEHRAN_OFFSET_H)%24;
+    sum[hod]+=(b.fake_bytes||0)/300; cnt[hod]+=1;       // 300s per 5-min bucket
+  });
+  const actual=sum.map((s,i)=>cnt[i]?s/cnt[i]:0), maxA=Math.max(1,...actual);
+  const anchors=(CFG&&CFG.curve&&CFG.curve.anchors)||new Array(24).fill(0);
+  const maxC=Math.max(...anchors,0.001);
+  const hx=h=>p.l + h/24*pw;
+  x.strokeStyle="#1c2330"; x.fillStyle="#8b97a6"; x.font="10px sans-serif";
+  for(let g=0;g<=4;g++){ const y=p.t+ph*g/4;
+    x.beginPath(); x.moveTo(p.l,y); x.lineTo(W-p.r,y); x.stroke();
+    x.fillText(bps(maxA*(1-g/4)), 4, y+3);
+  }
+  for(let hh=0;hh<=24;hh+=3) x.fillText((""+hh).padStart(2,"0"), hx(hh)-6, H-8);
+  // desired curve (grey dashed), scaled to the actual peak so shapes align
+  const cpts=[]; for(let i=0;i<24;i++) cpts.push({x:hx(i+0.5), y:p.t+ph-(anchors[i]/maxC)*ph});
+  x.strokeStyle="#8b97a6"; x.lineWidth=2; x.setLineDash([5,4]);
+  smoothPath(x,cpts); x.stroke(); x.setLineDash([]);
+  // actual (orange)
+  const apts=[]; for(let i=0;i<24;i++) apts.push({x:hx(i+0.5), y:p.t+ph-(actual[i]/maxA)*ph});
+  x.strokeStyle="#d29922"; x.lineWidth=2; x.lineJoin="round";
+  smoothPath(x,apts); x.stroke();
+  $("cmpLegend").innerHTML =
+    `<span><i style="background:#8b97a6"></i>Desired curve (scaled)</span>`
+    + `<span><i style="background:#d29922"></i>Actual fake upload (avg/hour)</span>`
+    + `<span style="color:var(--dim)">peak <b>${bps(maxA)}</b></span>`;
+}
 
 /* ---- canvas: donut gauge ---- */
 function gauge(c, pct, label, center){
@@ -722,10 +775,11 @@ $("tabbar").addEventListener("click", e=>{
 
 /* ---- boot ---- */
 buildForm();
-loadConfig().then(()=>{ loadASNs(); loadInterfaces(); });
+loadConfig().then(()=>{ loadASNs(); loadInterfaces(); loadCompare(); });
 pollStats(); loadBilling();
 setInterval(pollStats, 2000);
 setInterval(loadBilling, 30000);
+setInterval(loadCompare, 60000);
 </script>
 </body>
 </html>
