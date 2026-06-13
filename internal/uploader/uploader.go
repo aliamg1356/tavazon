@@ -9,6 +9,7 @@ import (
 	"net"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"tavazon/internal/config"
@@ -85,17 +86,19 @@ func (u *Uploader) runWorker(ctx context.Context, limiter *tokenBucket, rng *ran
 	if quota <= 0 {
 		return
 	}
-	uc := u.cfg().Uploader
+	cfg := u.cfg()
+	uc := cfg.Uploader
 	ip, port, asn := u.pickTarget(rng)
 	if ip == nil {
 		return
 	}
-	// An unconnected socket: per-destination ICMP port-unreachable is not
-	// delivered, so writes do not start failing against a dead port (the
-	// common case for junk traffic).
-	conn, err := net.ListenUDP("udp", &net.UDPAddr{})
+	// An unconnected socket bound (when an interface is configured) to that
+	// interface, so the junk egresses — and is routed by — the chosen NIC or
+	// VPN/TUN rather than the host's default route. Unconnected means a
+	// per-destination ICMP port-unreachable does not start failing the writes.
+	conn, err := openUDP(ctx, cfg.Network.Interface)
 	if err != nil {
-		u.log.Debug("uploader: open socket failed", "err", err)
+		u.log.Debug("uploader: open socket failed", "iface", cfg.Network.Interface, "err", err)
 		return
 	}
 	defer conn.Close()
@@ -116,7 +119,7 @@ func (u *Uploader) runWorker(ctx context.Context, limiter *tokenBucket, rng *ran
 		if gap > 0 {
 			sleepJitter(ctx, rng, gap)
 		}
-		n, err := conn.WriteToUDP(buf[:size], dst)
+		n, err := conn.WriteTo(buf[:size], dst)
 		if err != nil {
 			u.log.Debug("uploader: write failed", "dst", dst.String(), "err", err)
 			return
@@ -126,6 +129,28 @@ func (u *Uploader) runWorker(ctx context.Context, limiter *tokenBucket, rng *ran
 		u.metrics.AddFakeBytes(int64(n))
 		u.metering.RecordSend(asn, int64(n))
 	}
+}
+
+// openUDP opens an ephemeral unconnected UDP socket. When iface is non-empty the
+// socket is bound to that interface with SO_BINDTODEVICE, so manufactured traffic
+// egresses and is routed by the chosen interface (an internal NIC or a VPN/TUN)
+// instead of the host's default route. The destination must be routable via that
+// interface, or the send fails with ENETUNREACH. Binding needs CAP_NET_RAW; the
+// systemd service runs as root.
+func openUDP(ctx context.Context, iface string) (net.PacketConn, error) {
+	var lc net.ListenConfig
+	if iface != "" {
+		lc.Control = func(_, _ string, c syscall.RawConn) error {
+			var serr error
+			if err := c.Control(func(fd uintptr) {
+				serr = syscall.SetsockoptString(int(fd), syscall.SOL_SOCKET, syscall.SO_BINDTODEVICE, iface)
+			}); err != nil {
+				return err
+			}
+			return serr
+		}
+	}
+	return lc.ListenPacket(ctx, "udp", ":0")
 }
 
 // pickTarget returns the destination for a worker: the fixed dev.target in dev

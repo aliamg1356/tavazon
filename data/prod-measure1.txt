@@ -1,0 +1,12 @@
+=== /api/stats ===
+{
+  "up_bps": 165018,
+  "fake_bps": 112299929,
+  "down_bps": 63472282,
+  "cpu": 85.35980148883374,
+  "workers": 8
+}
+=== server: loadavg + ens192 tx rate (2s sample) ===
+loadavg: 1.74 0.93 0.76
+ens192 tx: 120797 B/s  = 0.00 Gbit/s
+tavazon cpu%: 55.7
