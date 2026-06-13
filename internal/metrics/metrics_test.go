@@ -28,7 +28,9 @@ func TestAddFakeBytesConcurrent(t *testing.T) {
 func TestObserveSpeedBPS(t *testing.T) {
 	r := New()
 	t0 := time.Now()
+	r.AddFakeBytes(5000)
 	r.ObserveSpeed(t0, 1000, 2000)
+	r.AddFakeBytes(5000) // +5000 fake bytes over the 10s interval -> 500 B/s
 	r.ObserveSpeed(t0.Add(10*time.Second), 1000+20000, 2000+10000)
 	s := r.Snapshot()
 	if s.UploadBPS != 2000 {
@@ -37,8 +39,15 @@ func TestObserveSpeedBPS(t *testing.T) {
 	if s.DownloadBPS != 1000 {
 		t.Errorf("DownloadBPS = %d, want 1000", s.DownloadBPS)
 	}
-	if n := len(s.SpeedSamples); n != 2 {
-		t.Errorf("SpeedSamples len = %d, want 2 (one per observation)", n)
+	if s.FakeBPS != 500 {
+		t.Errorf("FakeBPS = %d, want 500", s.FakeBPS)
+	}
+	if n := len(s.SpeedSamples.Upload); n != 2 {
+		t.Errorf("SpeedSamples.Upload len = %d, want 2 (one per observation)", n)
+	}
+	if len(s.SpeedSamples.Download) != 2 || len(s.SpeedSamples.Fake) != 2 {
+		t.Errorf("all three series should have 2 samples, got down=%d fake=%d",
+			len(s.SpeedSamples.Download), len(s.SpeedSamples.Fake))
 	}
 }
 

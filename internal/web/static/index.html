@@ -41,6 +41,19 @@
   .panel h2{font-size:14px;text-transform:uppercase;letter-spacing:.6px;color:var(--dim);margin-bottom:12px}
   .gauges{display:flex;gap:24px;flex-wrap:wrap;justify-content:space-around}
   canvas{display:block}
+  .charthead{display:flex;align-items:center;gap:12px;margin-bottom:8px}
+  .charthead h2{margin:0}
+  .charthead .sp{flex:1}
+  .chartlive{font-size:11px;font-weight:700;color:var(--green);letter-spacing:.5px}
+  .chartlive.paused{color:var(--yellow);cursor:pointer}
+  .charthint{font-size:11px;color:var(--dim)}
+  #chart{width:100%;height:auto;touch-action:none;cursor:crosshair;
+    border:1px solid var(--line);border-radius:6px;background:#06090d}
+  .speedlegend{display:flex;gap:20px;align-items:center;flex-wrap:wrap;
+    margin-top:8px;font-size:13px;color:var(--dim)}
+  .speedlegend i{display:inline-block;width:14px;height:3px;border-radius:2px;
+    vertical-align:middle;margin-right:6px}
+  .speedlegend b{color:var(--fg);font-variant-numeric:tabular-nums}
   table{width:100%;border-collapse:collapse;font-size:13px}
   th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line)}
   th{color:var(--dim);font-weight:600}
@@ -89,11 +102,15 @@
 
 <main>
 
-  <div class="grid cards" id="cards"></div>
-
   <div class="panel">
-    <h2>Upload speed — last samples</h2>
-    <canvas id="chart" width="1140" height="180"></canvas>
+    <div class="charthead">
+      <h2>Network speed</h2>
+      <span class="sp"></span>
+      <span class="chartlive" id="chartLive">● LIVE</span>
+      <span class="charthint">scroll = zoom · drag = pan · double-click = live</span>
+    </div>
+    <canvas id="chart" width="1140" height="240"></canvas>
+    <div class="speedlegend" id="speedLegend"></div>
   </div>
 
   <div class="panel">
@@ -206,24 +223,8 @@ function paintStats(s){
   $("devTarget").textContent = s.dev.target;
   toggleDevFields(s.dev.enabled);
 
-  const r = s.ratio.current, tgt = s.ratio.target;
-  const rc = r >= tgt*0.95 ? "var(--green)" : r >= tgt*0.6 ? "var(--yellow)" : "var(--red)";
-  const cards = [
-    ["Σ Upload", human(s.tracked.upload)],
-    ["Σ Download", human(s.tracked.download)],
-    ["Ratio", `<span style="color:${rc}">${r.toFixed(2)}</span> / ${tgt}`],
-    ["⇧ Speed", bps(s.speed.upload_bps)],
-    ["⇩ Speed", bps(s.speed.download_bps)],
-    ["Workers", s.workers_active],
-    ["Deficit", human(s.deficit_bytes)],
-    ["Curve", s.curve_intensity.toFixed(2)],
-    ["Fake / cycle", human(s.fake_bytes_cycle)],
-    ["Fake total", human(s.fake_bytes_total)],
-  ];
-  $("cards").innerHTML = cards.map(c =>
-    `<div class="card"><div class="k">${c[0]}</div><div class="v">${c[1]}</div></div>`).join("");
+  setChartData(s.speed_samples, s.speed);
 
-  drawChart(s.speed_samples || []);
   const rs = s.resources || {};
   gauge($("gCpu"), rs.cpu_pct||0, "CPU", (rs.cpu_pct||0).toFixed(1)+"%");
   gauge($("gRam"), rs.ram_pct||0, "RAM", human(rs.ram_used_bytes));
@@ -243,24 +244,170 @@ function pollStats(){
   });
 }
 
-/* ---- canvas: speed chart ---- */
-function drawChart(samples){
-  const c=$("chart"), x=c.getContext("2d"), W=c.width, H=c.height;
-  x.clearRect(0,0,W,H);
-  if(!samples.length) return;
-  const max=Math.max(...samples,1);
-  x.strokeStyle="#2a3340"; x.beginPath();
-  for(let i=0;i<=4;i++){ const y=H*i/4; x.moveTo(0,y); x.lineTo(W,y); }
-  x.stroke();
-  x.strokeStyle="#3b82f6"; x.lineWidth=1.5; x.beginPath();
-  samples.forEach((v,i)=>{
-    const px=i/(samples.length-1||1)*W, py=H-(v/max)*(H-8)-4;
-    i?x.lineTo(px,py):x.moveTo(px,py);
-  });
-  x.stroke();
-  x.fillStyle="#8b97a6"; x.font="11px sans-serif";
-  x.fillText(bps(max), 4, 12);
+/* ---- interactive speed chart: three smooth lines (upload / download / fake),
+   mouse-wheel zoom, drag/shift-wheel to pan through time, hover readout. ----
+   While the user pans/zooms a frozen snapshot is shown so live polls don't
+   shift it; returning to the newest sample (or double-click / the LIVE pill)
+   resumes live follow. */
+const SAMPLE_SEC = 2; // sample cadence; must match engine samplingInterval
+const SPEED_LINES = [
+  {key:"upload",   label:"Upload",      col:"#3b82f6"},
+  {key:"download", label:"Download",    col:"#3fb950"},
+  {key:"fake",     label:"Fake upload", col:"#d29922"},
+];
+const CH = $("chart");
+const CHPAD = {l:8, r:8, t:16, b:8};
+let liveSeries = {upload:[],download:[],fake:[]};
+let viewSeries = liveSeries;            // frozen copy of liveSeries while paused
+const chView = {span:150, right:0, follow:true};
+let chHover = -1, chDrag = null;
+
+function seriesLen(se){ return (se.upload||[]).length; }
+function chPlot(){ return {l:CHPAD.l, t:CHPAD.t, w:CH.width-CHPAD.l-CHPAD.r, h:CH.height-CHPAD.t-CHPAD.b}; }
+function clampRight(){ chView.right = Math.max(0, Math.min(chView.right, seriesLen(viewSeries)-1)); }
+
+// chWin resolves the desired span/right against the data into a concrete window.
+function chWin(){
+  const n = seriesLen(viewSeries);
+  let right = chView.follow ? n-1 : chView.right;
+  right = Math.max(0, Math.min(right, n-1));
+  let span = Math.max(10, Math.min(chView.span, n));
+  let left = right-span+1; if(left < 0){ left = 0; span = right-left+1; }
+  return {n, left, right, span};
 }
+
+function setChartData(series, speed){
+  liveSeries = {
+    upload:   (series && series.upload)   || [],
+    download: (series && series.download) || [],
+    fake:     (series && series.fake)     || [],
+  };
+  if(chView.follow){ viewSeries = liveSeries; chView.right = seriesLen(liveSeries)-1; }
+  updateLegend(speed || {});
+  drawChart();
+}
+function updateLegend(speed){
+  const cur = {upload:speed.upload_bps, download:speed.download_bps, fake:speed.fake_bps};
+  $("speedLegend").innerHTML = SPEED_LINES.map(l=>
+    `<span><i style="background:${l.col}"></i>${l.label} <b>${bps(cur[l.key]||0)}</b></span>`).join("");
+}
+function chSetLive(on){
+  chView.follow = on;
+  const el = $("chartLive");
+  if(on){
+    viewSeries = liveSeries; chView.right = seriesLen(liveSeries)-1;
+    el.textContent = "● LIVE"; el.className = "chartlive";
+  } else {
+    viewSeries = {upload:liveSeries.upload.slice(),
+                  download:liveSeries.download.slice(), fake:liveSeries.fake.slice()};
+    chView.right = seriesLen(viewSeries)-1;
+    el.textContent = "❚❚ PAUSED — click for live"; el.className = "chartlive paused";
+  }
+}
+function freezeIfLive(){ if(chView.follow) chSetLive(false); }
+function syncFollow(){ if(!chView.follow && chView.right >= seriesLen(viewSeries)-1) chSetLive(true); }
+
+function smoothPath(x, pts){
+  if(!pts.length) return;
+  x.beginPath();
+  if(pts.length===1){ x.arc(pts[0].x,pts[0].y,1.5,0,7); return; }
+  x.moveTo(pts[0].x, pts[0].y);
+  for(let i=0;i<pts.length-1;i++){            // Catmull-Rom → cubic bezier
+    const p0=pts[i-1]||pts[i], p1=pts[i], p2=pts[i+1], p3=pts[i+2]||p2;
+    x.bezierCurveTo(p1.x+(p2.x-p0.x)/6, p1.y+(p2.y-p0.y)/6,
+                    p2.x-(p3.x-p1.x)/6, p2.y-(p3.y-p1.y)/6, p2.x, p2.y);
+  }
+}
+function drawChart(){
+  const x=CH.getContext("2d"), W=CH.width, H=CH.height, p=chPlot();
+  x.clearRect(0,0,W,H);
+  const w=chWin();
+  if(!w.n) return;
+  let max=1;
+  SPEED_LINES.forEach(l=>{ const a=viewSeries[l.key]||[];
+    for(let i=w.left;i<=w.right;i++){ if(a[i]>max) max=a[i]; } });
+  x.strokeStyle="#1c2330"; x.fillStyle="#8b97a6"; x.font="10px sans-serif";
+  for(let g=0;g<=4;g++){ const y=p.t+p.h*g/4;
+    x.beginPath(); x.moveTo(p.l,y); x.lineTo(p.l+p.w,y); x.stroke();
+    x.fillText(bps(max*(1-g/4)), p.l+2, y-2);
+  }
+  const sx = i => p.l + (w.span<=1?0:(i-w.left)/(w.span-1))*p.w;
+  const sy = v => p.t + p.h - (v/max)*p.h;
+  SPEED_LINES.forEach(l=>{
+    const a=viewSeries[l.key]||[], pts=[];
+    for(let i=w.left;i<=w.right;i++) pts.push({x:sx(i), y:sy(a[i]||0)});
+    x.strokeStyle=l.col; x.lineWidth=2; x.lineJoin="round"; x.lineCap="round";
+    smoothPath(x, pts); x.stroke();
+  });
+  if(chHover>=w.left && chHover<=w.right) drawHover(x, p, sx, sy, w, max);
+}
+function drawHover(x, p, sx, sy, w, max){
+  const hx=sx(chHover);
+  x.strokeStyle="#3a4555"; x.lineWidth=1;
+  x.beginPath(); x.moveTo(hx,p.t); x.lineTo(hx,p.t+p.h); x.stroke();
+  const rows=[ago((w.n-1-chHover)*SAMPLE_SEC)];
+  SPEED_LINES.forEach(l=>{ const v=(viewSeries[l.key]||[])[chHover]||0;
+    x.fillStyle=l.col; x.beginPath(); x.arc(hx, sy(v), 3, 0, 7); x.fill();
+    rows.push(l.label+": "+bps(v)); });
+  x.font="11px sans-serif";
+  const tw=Math.max(...rows.map(t=>x.measureText(t).width))+12, th=rows.length*14+8;
+  let bx = hx+10; if(bx+tw > p.l+p.w) bx = hx-10-tw;
+  const by=p.t+4;
+  x.fillStyle="rgba(6,9,13,0.92)"; x.fillRect(bx,by,tw,th);
+  x.strokeStyle="#2a3340"; x.strokeRect(bx,by,tw,th);
+  rows.forEach((t,i)=>{ x.fillStyle = i? "#e6edf3":"#8b97a6"; x.fillText(t, bx+6, by+14+i*14); });
+}
+function ago(sec){
+  sec=Math.round(sec); if(sec<=0) return "now";
+  const m=Math.floor(sec/60), s=sec%60; return (m?m+"m ":"")+s+"s ago";
+}
+function chMouse(e){
+  const r=CH.getBoundingClientRect();
+  return {x:(e.clientX-r.left)*(CH.width/r.width), y:(e.clientY-r.top)*(CH.height/r.height)};
+}
+function chIdxAt(mx){
+  const w=chWin(), p=chPlot();
+  const frac=Math.max(0, Math.min(1, (mx-p.l)/p.w));
+  return Math.max(0, Math.min(w.n-1, Math.round(w.left + frac*(w.span-1))));
+}
+CH.addEventListener("wheel", e=>{
+  e.preventDefault();
+  const m=chMouse(e);
+  freezeIfLive();
+  if(e.shiftKey){
+    chView.right += Math.sign(e.deltaY||e.deltaX) * Math.max(1, Math.round(chView.span*0.15));
+    clampRight();
+  } else {
+    const focus=chIdxAt(m.x), frac=(m.x-chPlot().l)/chPlot().w;
+    chView.span=Math.max(10, Math.round(chView.span*(e.deltaY<0?0.8:1.25)));
+    const span=Math.min(chView.span, seriesLen(viewSeries));
+    chView.right=Math.round(focus + (1-frac)*(span-1)); clampRight();
+  }
+  syncFollow(); chHover=chIdxAt(m.x); drawChart();
+}, {passive:false});
+CH.addEventListener("mousedown", e=>{ e.preventDefault();
+  chDrag={x:chMouse(e).x, right:chView.right, moved:false}; });
+window.addEventListener("mousemove", e=>{
+  if(chDrag){
+    const m=chMouse(e);
+    // only a real drag (>3px) freezes live and pans; a bare click does not.
+    if(!chDrag.moved && Math.abs(m.x-chDrag.x) >= 3){
+      chDrag.moved=true; freezeIfLive(); chDrag.right=chView.right;
+    }
+    if(chDrag.moved){
+      const p=chPlot(), w=chWin(), perSample=p.w/Math.max(1,w.span-1);
+      chView.right=chDrag.right + Math.round((chDrag.x-m.x)/perSample);
+      clampRight(); syncFollow();
+    }
+    chHover=chIdxAt(m.x); drawChart();
+  } else if(e.target===CH){
+    chHover=chIdxAt(chMouse(e).x); drawChart();
+  }
+});
+window.addEventListener("mouseup", ()=>{ chDrag=null; });
+CH.addEventListener("mouseleave", ()=>{ if(!chDrag){ chHover=-1; drawChart(); } });
+CH.addEventListener("dblclick", ()=>{ chView.span=150; chSetLive(true); chHover=-1; drawChart(); });
+$("chartLive").addEventListener("click", ()=>{ if(!chView.follow){ chSetLive(true); drawChart(); } });
 
 /* ---- canvas: donut gauge ---- */
 function gauge(c, pct, label, center){

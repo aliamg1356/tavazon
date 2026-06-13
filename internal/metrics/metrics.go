@@ -10,8 +10,10 @@ import (
 	"time"
 )
 
-// maxSamples bounds the in-memory ring of recent upload-speed samples.
-const maxSamples = 600
+// maxSamples bounds each in-memory speed-sample ring (upload, download, fake).
+// At the engine's ~2s sample cadence this is roughly one hour of history for
+// the dashboard's pan/zoom chart.
+const maxSamples = 1800
 
 // Resources is the whole-machine resource snapshot rendered by the dashboard's
 // CPU / RAM / bandwidth panel. CPUPct/RAMPct are system-wide utilisation;
@@ -26,21 +28,30 @@ type Resources struct {
 	BandwidthPct    float64 `json:"bandwidth_pct"`
 }
 
+// SpeedSeries is the recent byte/sec history for the dashboard's three speed
+// lines. The slices are parallel and equal-length (one entry per sample tick).
+type SpeedSeries struct {
+	Upload   []int64 `json:"upload"`
+	Download []int64 `json:"download"`
+	Fake     []int64 `json:"fake"`
+}
+
 // Snapshot is the metrics-owned slice of dashboard state; the web layer
 // composes it with config, state, and metering for the full /api/stats.
 type Snapshot struct {
-	UptimeSeconds   int64     `json:"uptime_seconds"`
-	TrackedUpload   int64     `json:"tracked_upload"`
-	TrackedDownload int64     `json:"tracked_download"`
-	UploadBPS       int64     `json:"upload_bps"`
-	DownloadBPS     int64     `json:"download_bps"`
-	DeficitBytes    int64     `json:"deficit_bytes"`
-	WorkersActive   int       `json:"workers_active"`
-	CurveIntensity  float64   `json:"curve_intensity"`
-	FakeBytesCycle  int64     `json:"fake_bytes_cycle"`
-	FakeBytesTotal  int64     `json:"fake_bytes_total"`
-	Resources       Resources `json:"resources"`
-	SpeedSamples    []int64   `json:"speed_samples"`
+	UptimeSeconds   int64       `json:"uptime_seconds"`
+	TrackedUpload   int64       `json:"tracked_upload"`
+	TrackedDownload int64       `json:"tracked_download"`
+	UploadBPS       int64       `json:"upload_bps"`
+	DownloadBPS     int64       `json:"download_bps"`
+	FakeBPS         int64       `json:"fake_bps"`
+	DeficitBytes    int64       `json:"deficit_bytes"`
+	WorkersActive   int         `json:"workers_active"`
+	CurveIntensity  float64     `json:"curve_intensity"`
+	FakeBytesCycle  int64       `json:"fake_bytes_cycle"`
+	FakeBytesTotal  int64       `json:"fake_bytes_total"`
+	Resources       Resources   `json:"resources"`
+	SpeedSamples    SpeedSeries `json:"speed_samples"`
 }
 
 // Registry holds the live, concurrency-safe in-memory metrics.
@@ -57,12 +68,16 @@ type Registry struct {
 	mu             sync.RWMutex
 	upBPS          int64
 	downBPS        int64
+	fakeBPS        int64
 	lastTx         uint64
 	lastRx         uint64
+	lastFake       int64
 	lastObs        time.Time
 	curveIntensity float64
 	resources      Resources
-	samples        []int64
+	samplesUp      []int64
+	samplesDown    []int64
+	samplesFake    []int64
 }
 
 // New returns a Registry with its uptime clock started.
@@ -107,26 +122,37 @@ func (r *Registry) ObserveTracked(up, down int64) {
 	r.trackedDownload.Store(down)
 }
 
-// ObserveSpeed derives the instantaneous up/down speed from the raw interface
-// byte counters at time now and appends the upload speed to the samples ring.
-// The engine's sampler calls it on a fixed cadence, decoupled from the traffic
-// cycle, so the chart and speed cards stay live even during a long volume-mode
-// cycle. A backward step (a counter reset/reboot) clamps the derived speed to
-// zero.
+// ObserveSpeed derives the instantaneous upload, download, and fake-upload
+// speeds at time now and appends each to its samples ring. Upload/download come
+// from the raw interface byte counters (tx/rx); fake upload comes from the
+// manufactured-bytes counter. The engine's sampler calls it on a fixed cadence,
+// decoupled from the traffic cycle, so the chart stays live even during a long
+// volume-mode cycle. A backward step (a counter reset/reboot) clamps the
+// derived speed to zero.
 func (r *Registry) ObserveSpeed(now time.Time, tx, rx uint64) {
+	fake := r.fakeBytesTotal.Load()
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if !r.lastObs.IsZero() {
 		if dt := now.Sub(r.lastObs).Seconds(); dt > 0 {
 			r.upBPS = deltaRate(tx, r.lastTx, dt)
 			r.downBPS = deltaRate(rx, r.lastRx, dt)
+			r.fakeBPS = deltaRate(uint64(fake), uint64(r.lastFake), dt)
 		}
 	}
-	r.lastTx, r.lastRx, r.lastObs = tx, rx, now
-	r.samples = append(r.samples, r.upBPS)
-	if len(r.samples) > maxSamples {
-		r.samples = append([]int64(nil), r.samples[len(r.samples)-maxSamples:]...)
+	r.lastTx, r.lastRx, r.lastFake, r.lastObs = tx, rx, fake, now
+	r.samplesUp = appendRing(r.samplesUp, r.upBPS)
+	r.samplesDown = appendRing(r.samplesDown, r.downBPS)
+	r.samplesFake = appendRing(r.samplesFake, r.fakeBPS)
+}
+
+// appendRing appends v and trims the slice to the most recent maxSamples.
+func appendRing(s []int64, v int64) []int64 {
+	s = append(s, v)
+	if len(s) > maxSamples {
+		s = append([]int64(nil), s[len(s)-maxSamples:]...)
 	}
+	return s
 }
 
 // deltaRate returns (cur-prev)/dt as bytes/sec, or 0 if the counter went
@@ -148,13 +174,18 @@ func (r *Registry) Snapshot() Snapshot {
 		TrackedDownload: r.trackedDownload.Load(),
 		UploadBPS:       r.upBPS,
 		DownloadBPS:     r.downBPS,
+		FakeBPS:         r.fakeBPS,
 		DeficitBytes:    r.deficit.Load(),
 		WorkersActive:   int(r.workersActive.Load()),
 		CurveIntensity:  r.curveIntensity,
 		FakeBytesCycle:  r.fakeBytesCycle.Load(),
 		FakeBytesTotal:  r.fakeBytesTotal.Load(),
 		Resources:       r.resources,
-		SpeedSamples:    append([]int64(nil), r.samples...),
+		SpeedSamples: SpeedSeries{
+			Upload:   append([]int64(nil), r.samplesUp...),
+			Download: append([]int64(nil), r.samplesDown...),
+			Fake:     append([]int64(nil), r.samplesFake...),
+		},
 	}
 }
 

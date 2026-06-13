@@ -245,7 +245,7 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 		"tracked":          map[string]int64{"upload": s.state.TotalUpload, "download": s.state.TotalDownload},
 		"raw":              map[string]int64{"upload": rawUp, "download": rawDown},
 		"sync":             map[string]int64{"upload": s.state.UploadSync, "download": s.state.DownloadSync},
-		"speed":            map[string]int64{"upload_bps": snap.UploadBPS, "download_bps": snap.DownloadBPS},
+		"speed":            map[string]int64{"upload_bps": snap.UploadBPS, "download_bps": snap.DownloadBPS, "fake_bps": snap.FakeBPS},
 		"ratio":            map[string]float64{"current": ratio, "target": cfg.Target.Ratio.Multiplier},
 		"deficit_bytes":    snap.DeficitBytes,
 		"workers_active":   snap.WorkersActive,
