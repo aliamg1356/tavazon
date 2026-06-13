@@ -95,7 +95,7 @@ func TestRunCycleSendsAndMeters(t *testing.T) {
 	reg := metrics.New()
 	u := New(tg, reg, store, devConfig, discardLogger(), rand.New(rand.NewPCG(9, 9)))
 
-	sent := u.RunCycle(context.Background(), 200000, 8)
+	sent := u.RunCycle(context.Background(), 200000, 8, 1<<20)
 	if sent <= 0 {
 		t.Fatalf("RunCycle sent %d bytes, want > 0", sent)
 	}
@@ -131,7 +131,7 @@ func TestRunCycleRespectsCancellation(t *testing.T) {
 	cancel() // already cancelled
 	done := make(chan struct{})
 	go func() {
-		u.RunCycle(ctx, 1<<40, 16) // an enormous budget must still return promptly
+		u.RunCycle(ctx, 1<<40, 16, 1<<30) // an enormous budget must still return promptly
 		close(done)
 	}()
 	select {

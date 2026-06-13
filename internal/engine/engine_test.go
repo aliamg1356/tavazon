@@ -37,14 +37,16 @@ type stubUploader struct {
 	calls   int
 	workers []int
 	budgets []int64
+	rates   []float64
 	doPanic bool
 }
 
-func (s *stubUploader) RunCycle(ctx context.Context, budget int64, workers int) int64 {
+func (s *stubUploader) RunCycle(ctx context.Context, budget int64, workers int, ratePerSec float64) int64 {
 	s.mu.Lock()
 	s.calls++
 	s.workers = append(s.workers, workers)
 	s.budgets = append(s.budgets, budget)
+	s.rates = append(s.rates, ratePerSec)
 	p := s.doPanic
 	s.mu.Unlock()
 	if p {

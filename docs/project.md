@@ -406,8 +406,15 @@ base    := cfg.Uploader.ThreadsCoefficient * 10
 target  := int(intensity(now) * float64(base))
 workers := slewToward(prevWorkers, target, cfg.Uploader.MaxRamp)   // smooth ramp
 workers  = min(workers, cfg.Uploader.MaxWorkers)                    // hard cap
+// the shared token-bucket rate is scaled the same way, so throughput — not just
+// concurrency — tracks the curve (base_rate_bps × speed_coefficient is the
+// intensity-1 rate); see §6.8.
+rate    := float64(cfg.Uploader.BaseRateBPS) * float64(cfg.Uploader.SpeedCoefficient) * intensity(now)
 ```
 
+Each cycle is time-bounded (`maxCycleDuration`, 30s) so a single huge-budget
+volume-mode cycle can't run for hours with the rate frozen at its start value —
+the loop returns regularly to re-scale workers and rate from the current curve.
 At the pre-dawn trough the curve can reach `0` — Tavazon goes fully idle, exactly like
 a sleeping user's server. The anchors, `curveMax`, and the wander parameters are all
 overridable in config (§8).
@@ -538,10 +545,14 @@ wait for all workers, then return bytes actually sent
 ```
 
 **Rate limiter** — a shared **token bucket**: refill rate
-`R = base_rate_bps × speed_coefficient` bytes/sec, where `base_rate_bps` (default
-512 KiB/s) and `speed_coefficient` (1–5) are both config fields — dashboard-editable,
-each with a `Validate`-enforced minimum (§8). `WaitN(size)` blocks until `size`
-tokens are available, smoothing total egress and bounding CPU.
+`R = base_rate_bps × speed_coefficient × intensity(now)` bytes/sec, where
+`base_rate_bps` (default 512 KiB/s) and `speed_coefficient` (1–5) are both config
+fields — dashboard-editable, each with a `Validate`-enforced minimum (§8). The
+`× intensity` factor (§6.4) is what makes the manufactured throughput rise and
+fall with the daily curve rather than sitting flat. `WaitN(size)` blocks until
+`size` tokens are available, smoothing total egress and bounding CPU. To make the
+limiter (rather than per-worker pacing) the throttle at high rates, set
+`packet_gap_max` to 0.
 
 **Bounded parallelism:** `workerCount` is capped by `cfg.Uploader.MaxWorkers`
 (default 300) regardless of what the curve produces. The whole cycle runs under a

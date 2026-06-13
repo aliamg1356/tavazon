@@ -48,7 +48,7 @@ var maxCycleDuration = 30 * time.Second
 // cycleRunner is the slice of the uploader the engine depends on.
 // *uploader.Uploader satisfies it; tests substitute a stub.
 type cycleRunner interface {
-	RunCycle(ctx context.Context, budget int64, workers int) int64
+	RunCycle(ctx context.Context, budget int64, workers int, ratePerSec float64) int64
 }
 
 // Engine is the main orchestration loop. It is driven from a single goroutine
@@ -176,13 +176,17 @@ func (e *Engine) runCycle(ctx context.Context) {
 		workers = e.workerCount(cfg, intensity)
 		if workers > 0 {
 			budget := int64(float64(deficit) * cfg.Uploader.CycleBudgetFraction)
+			// Scale the send rate by the curve so throughput — not just the
+			// worker count — rises and falls over the day. base_rate_bps ×
+			// speed_coefficient is the intensity-1 rate.
+			rate := float64(cfg.Uploader.BaseRateBPS) * float64(cfg.Uploader.SpeedCoefficient) * intensity
 			// Bound the cycle so the loop returns to re-read the traffic curve
-			// (and re-size the worker pool) regularly. Without this, one
-			// volume-mode cycle whose budget is terabytes would run for hours
-			// with the worker count — and thus the throughput — frozen at its
-			// start-of-cycle value, so the curve never shapes the output.
+			// (and re-scale the rate) regularly. Without this, one volume-mode
+			// cycle whose budget is terabytes would run for hours with the rate
+			// frozen at its start-of-cycle value, so the curve never shapes the
+			// output.
 			cctx, cancel := context.WithTimeout(ctx, maxCycleDuration)
-			sent = e.uploader.RunCycle(cctx, budget, workers)
+			sent = e.uploader.RunCycle(cctx, budget, workers, rate)
 			cancel()
 			e.prevWorkers = workers
 			// Re-read so the tracked totals reflect the just-sent traffic

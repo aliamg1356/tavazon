@@ -34,9 +34,12 @@ func New(tg *targets.Targets, m *metrics.Registry, store *metering.Store, cfg fu
 }
 
 // RunCycle manufactures up to budget bytes spread over the given number of
-// workers (capped at MaxWorkers). It blocks until done or ctx is cancelled,
+// workers (capped at MaxWorkers), throttled to ratePerSec bytes/sec by a shared
+// token bucket. The caller scales ratePerSec by the traffic curve, so the
+// shared limiter — not just the worker count — makes throughput follow the
+// curve (docs/project.md §6.4, §6.8). It blocks until done or ctx is cancelled,
 // and returns the bytes actually sent.
-func (u *Uploader) RunCycle(ctx context.Context, budget int64, workers int) int64 {
+func (u *Uploader) RunCycle(ctx context.Context, budget int64, workers int, ratePerSec float64) int64 {
 	uc := u.cfg().Uploader
 	if workers < 1 {
 		workers = 1
@@ -47,7 +50,7 @@ func (u *Uploader) RunCycle(ctx context.Context, budget int64, workers int) int6
 	if budget < 0 {
 		budget = 0
 	}
-	limiter := newTokenBucket(float64(uc.BaseRateBPS) * float64(uc.SpeedCoefficient))
+	limiter := newTokenBucket(ratePerSec)
 	perWorker := budget / int64(workers)
 
 	var sent atomic.Int64
