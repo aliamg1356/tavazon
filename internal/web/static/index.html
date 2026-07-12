@@ -67,6 +67,14 @@
   input,select{font:inherit;background:var(--panel2);color:var(--fg);border:1px solid var(--line);
     border-radius:5px;padding:6px 8px;width:100%}
   .formgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:4px 14px}
+  .note{font-size:11px;line-height:1.4;color:var(--dim);margin:2px 0 6px;
+    font-variant-numeric:tabular-nums}
+  .note b{color:var(--fg);font-weight:600}
+  .note.warn{color:var(--red)}
+  .note.warn b{color:var(--red)}
+  .field.disabled{opacity:.4;pointer-events:none}
+  .field.disabled input,.field.disabled select{cursor:not-allowed}
+  label.mainfield{color:var(--accent);font-weight:700}
   .rate{display:flex;gap:6px}
   .rate select{width:auto;flex:0 0 auto}
   .asnbox{max-height:220px;overflow:auto;border:1px solid var(--line);border-radius:5px;padding:6px;margin-top:4px}
@@ -159,6 +167,7 @@
         <button id="btnCurveReset" type="button">Reset edits</button>
       </div>
       <div class="row" style="margin-top:12px">
+        <button id="btnAutotune" type="button">Auto-tune</button>
         <button id="btnApply">Apply config</button>
         <span class="msg" id="cfgMsg"></span>
       </div>
@@ -230,6 +239,15 @@ function paintStats(s){
   $("devBanner").style.display = s.dev.enabled ? "block" : "none";
   $("devTarget").textContent = s.dev.target;
   toggleDevFields(s.dev.enabled);
+
+  // Stash the live values the field notes annotate their formulas with.
+  LIVE = {
+    intensity:    s.curve_intensity || 0,
+    deficit:      s.deficit_bytes || 0,
+    download_bps: (s.speed && s.speed.download_bps) || 0,
+    fake_bps:     (s.speed && s.speed.fake_bps) || 0,
+  };
+  refreshNotes();
 
   setChartData(s.speed_samples, s.speed);
 
@@ -543,7 +561,7 @@ const GIB = 2**30;  // target.volume.bytes is shown in GB, stored as bytes
 // base_rate_bps is stored as bytes/sec but shown in a selectable binary unit.
 const RATE_UNITS = {"KiB/s":2**10, "MiB/s":2**20, "GiB/s":2**30};
 const FIELDS = [
-  ["target.mode","Mode (ratio|volume)","text"],
+  ["target.mode","Mode","select",["ratio","volume"]],
   ["target.ratio.multiplier","Ratio multiplier","number"],
   ["target.ratio.jitter","Ratio jitter","number"],
   ["target.volume.bytes","Volume (GB)","number"],
@@ -563,6 +581,38 @@ const FIELDS = [
   ["dev.workers","Dev workers","number"],
   ["geoip.picker_country","ASN picker country","text"],
 ];
+const FIELD_TYPE = Object.fromEntries(FIELDS.map(([p,,t])=>[p,t]));
+
+// Which target fields belong to which mode: the other mode's are disabled, and
+// the active mode's primary input(s) are highlighted as the auto-tune source.
+const VOLUME_ONLY = ["target.volume.bytes","target.volume.window"];
+const RATIO_ONLY  = ["target.ratio.multiplier","target.ratio.jitter"];
+const MAIN_FIELDS = {volume:VOLUME_ONLY, ratio:["target.ratio.multiplier"]};
+// Uploader knobs auto-tune derives from the main field(s).
+const DERIVED = ["uploader.threads_coefficient","uploader.speed_coefficient",
+  "uploader.base_rate_bps","uploader.cycle_budget_fraction","uploader.packet_gap_max",
+  "uploader.max_workers","uploader.max_ramp"];
+
+// Auto-tune constants (documented in the plan): send-rate margin over the target
+// average, assumed sustainable throughput per worker goroutine, and the cycle
+// budget fraction that keeps a single cycle from draining the whole deficit.
+const HEADROOM = 1.25, PER_WORKER_BPS = 8*2**20, BUDGET_FRACTION = 0.5;
+
+// Latest live stats, stashed by paintStats so the field notes can show the
+// current curve intensity / deficit / download rate alongside each formula.
+let LIVE = {intensity:0, deficit:0, download_bps:0, fake_bps:0};
+
+const clampf = (v,lo,hi)=>Math.max(lo,Math.min(hi,v));
+const avg = a => a.length ? a.reduce((s,x)=>s+x,0)/a.length : 0;
+// parseGoDuration turns a Go duration string ("24h0m0s","30m","90s") into seconds.
+function parseGoDuration(s){
+  let sec=0, re=/([\d.]+)(h|m|s|ms|us|µs|ns)/g, m;
+  while((m=re.exec(String(s||"")))){
+    const n=parseFloat(m[1]);
+    sec += n*{h:3600,m:60,s:1,ms:1e-3,us:1e-6,"µs":1e-6,ns:1e-9}[m[2]];
+  }
+  return sec;
+}
 function dig(o,path){ return path.split(".").reduce((a,k)=>a&&a[k],o); }
 function setIn(o,path,v){
   const ks=path.split("."); let t=o;
@@ -570,20 +620,29 @@ function setIn(o,path,v){
   t[ks[ks.length-1]]=v;
 }
 function buildForm(){
-  $("cfgForm").innerHTML = FIELDS.map(([p,lbl,t])=>{
+  $("cfgForm").innerHTML = FIELDS.map(([p,lbl,t,opts])=>{
+    const note = `<div class="note" data-note="${p}"></div>`;
+    let ctl;
     if(t==="rate"){
-      const opts = Object.keys(RATE_UNITS).map(u=>`<option value="${u}">${u}</option>`).join("");
-      return `<div><label>${lbl}</label><span class="rate">
-        <input data-path="${p}" type="number" step="any">
-        <select data-unit="${p}">${opts}</select></span></div>`;
-    }
-    if(t==="iface"){
+      const us = Object.keys(RATE_UNITS).map(u=>`<option value="${u}">${u}</option>`).join("");
+      ctl = `<span class="rate"><input data-path="${p}" type="number" step="any">
+        <select data-unit="${p}">${us}</select></span>`;
+    } else if(t==="select"){
+      ctl = `<select data-path="${p}">${(opts||[]).map(o=>
+        `<option value="${o}">${o}</option>`).join("")}</select>`;
+    } else if(t==="iface"){
       // options are filled by loadInterfaces() once /api/interfaces returns.
-      return `<div><label>${lbl}</label><select data-path="${p}"></select></div>`;
+      ctl = `<select data-path="${p}"></select>`;
+    } else {
+      ctl = `<input data-path="${p}" type="${t}" ${t==="number"?'step="any"':''}>`;
     }
-    return `<div><label>${lbl}</label><input data-path="${p}" type="${t}"
-       ${t==="number"?'step="any"':''}></div>`;
+    return `<div class="field" data-field="${p}"><label>${lbl}</label>${ctl}${note}</div>`;
   }).join("");
+  // Notes carry live values; recompute them whenever any field changes.
+  $("cfgForm").addEventListener("input", refreshNotes);
+  $("cfgForm").addEventListener("change", e=>{
+    if(e.target.matches('[data-path="target.mode"]')) applyModeUI(e.target.value);
+  });
 }
 // Dev-only settings are hidden unless dev mode is on. Driven from the live
 // /api/stats poll so the fields appear/disappear the moment dev is toggled.
@@ -610,10 +669,127 @@ function fillForm(){
     else { el.value = v; }
   });
   toggleDevFields(!!(CFG.dev && CFG.dev.enabled));
+  applyModeUI((CFG.target && CFG.target.mode) || "ratio");
   curveActual = (CFG.curve.anchors||[]).slice();
   curveEdit   = curveActual.slice();
   curveYMax   = Math.max(2.5, Number(CFG.curve.max)||2.5);
   drawCurve();
+  refreshNotes();
+}
+
+// applyModeUI disables the inactive mode's target fields (they don't apply) and
+// highlights the active mode's main field(s) as the auto-tune source.
+function applyModeUI(mode){
+  const off = mode==="volume" ? RATIO_ONLY : VOLUME_ONLY;
+  const main = new Set(MAIN_FIELDS[mode]||[]);
+  [...VOLUME_ONLY, ...RATIO_ONLY].forEach(p=>{
+    const wrap = document.querySelector(`.field[data-field="${p}"]`);
+    if(!wrap) return;
+    wrap.classList.toggle("disabled", off.includes(p));
+    const lbl = wrap.querySelector("label");
+    if(lbl) lbl.classList.toggle("mainfield", main.has(p));
+    const inp = wrap.querySelector("[data-path]");
+    if(inp) inp.disabled = off.includes(p);
+  });
+}
+
+/* ---- per-field math notes ----
+   Each field carries a <div class="note"> that restates its formula with the
+   current field values and the live curve intensity / deficit / download rate
+   substituted, so the operator can see how a knob relates to the main target. */
+const bytesPerMbit = 125000;                       // matches engine.bytesPerMbit
+const fmt = n => !isFinite(n) ? "0"
+  : (Math.abs(n)>=100 ? Math.round(n) : Math.round(n*100)/100).toString();
+
+// rawFieldValue reads a field's current form value in stored units (rate → B/s,
+// volume → bytes), falling back to CFG when the input is empty/absent.
+function rawFieldValue(p){
+  const el = document.querySelector(`[data-path="${p}"]`);
+  const t = FIELD_TYPE[p];
+  if(!el || el.value===""){ return dig(CFG,p); }
+  if(p==="target.volume.bytes") return Number(el.value)*GIB;
+  if(t==="rate"){ const u=document.querySelector(`[data-unit="${p}"]`);
+    return Number(el.value)*(RATE_UNITS[u&&u.value]||1); }
+  if(t==="number") return Number(el.value);
+  return el.value;                                 // text / select / duration
+}
+
+const NOTES = {
+  "target.mode": c => ({html: c.mode==="volume"
+    ? `Volume mode: send <b>${human(c.volBytes)}</b> per <b>${c.windowStr}</b> (avg <b>${bps(c.meanRate)}</b>), shaped by the curve.`
+    : `Ratio mode: keep upload = download × <b>${fmt(c.mult)}</b>. Rate follows real download traffic, not a fixed value.`}),
+  "target.ratio.multiplier": c => ({html:
+    `target upload = download × <b>${fmt(c.mult)}</b>. Now download <b>${bps(c.downloadBps)}</b> → target <b>${bps(c.downloadBps*c.mult)}</b>.`}),
+  "target.ratio.jitter": c => ({html:
+    `multiplier jittered ±<b>${fmt(c.jitter*100)}%</b> per cycle → ×[${fmt(c.mult*(1-c.jitter))}, ${fmt(c.mult*(1+c.jitter))}].`}),
+  "target.volume.bytes": c => ({html:
+    `mean target rate = volume ÷ window = <b>${bps(c.meanRate)}</b>. Curve peak ≈ <b>${bps(c.peakRate)}</b>.`}),
+  "target.volume.window": c => ({html:
+    `= <b>${fmt(c.windowSec/3600)} h</b>. mean target rate = volume ÷ window = <b>${bps(c.meanRate)}</b>.`}),
+  "uploader.speed_coefficient": c => ({html:
+    `part of the send rate: base × speed = <b>${bps(c.baseRate*c.speed)}</b> at intensity 1.`}),
+  "uploader.base_rate_bps": c => {
+    const r1 = c.baseRate*c.speed, live = r1*c.intensity;
+    let html = `rate = base × speed × intensity = ${bps(c.baseRate)} × ${fmt(c.speed)} × <b>${fmt(c.intensity)}</b> = <b>${bps(live)}</b> now.`;
+    let warn = false;
+    if(c.mode==="volume" && c.meanRate>0){
+      html += ` Target avg <b>${bps(c.meanRate)}</b> (peak <b>${bps(c.peakRate)}</b>).`;
+      if(r1 > 3*c.peakRate){ warn = true;
+        html += ` ⚠ base×speed is ~${fmt(r1/c.meanRate)}× the target avg — it bursts then idles ("cutting"). Press Auto-tune.`; }
+    }
+    return {html, warn};
+  },
+  "uploader.cycle_budget_fraction": c => ({html:
+    `budget = deficit × <b>${fmt(c.budgetFrac)}</b>, capped at ~30 s/cycle. Now deficit <b>${human(c.deficit)}</b> → budget <b>${human(c.deficit*c.budgetFrac)}</b>.`}),
+  "uploader.packet_gap_max": c => ({html:
+    `extra random sleep ≤ this between packets (0 = pace only by the rate limiter).`}),
+  "uploader.threads_coefficient": c => ({html:
+    `workers ≈ round(intensity × coef × 10) = round(${fmt(c.intensity)} × ${fmt(c.threads)} × 10) = <b>${Math.round(c.intensity*c.threads*10)}</b>, capped at max_workers, slewed by max_ramp.`}),
+  "uploader.max_workers": c => ({html:
+    `hard cap on concurrent workers. Curve peak (intensity ${fmt(c.maxAnchor)}) needs ≈ <b>${Math.round(c.maxAnchor*c.threads*10)}</b>.`}),
+  "uploader.max_ramp": c => ({html:
+    `worker count moves ≤ <b>${fmt(c.maxRamp)}</b>/cycle → full ramp in ≈ <b>${Math.ceil((c.maxWorkers||1)/Math.max(1,c.maxRamp))}</b> cycles.`}),
+  "uploader.min_datagram": c => ({html:
+    `avg datagram ≈ <b>${Math.round((c.minD+c.maxD)/2)} B</b> → ≈ <b>${fmt((c.baseRate*c.speed)/Math.max(1,(c.minD+c.maxD)/2)/1000)}</b>k pkt/s at intensity 1.`}),
+  "uploader.max_datagram": c => ({html:
+    `datagram size is uniform in [min, max]; ≤ 1472 B stays under the Ethernet MTU (no IP fragmentation).`}),
+  "network.link_capacity_mbit": c => ({html:
+    c.linkBps ? `bandwidth-gauge ceiling = <b>${bps(c.linkBps)}</b>. base×speed is <b>${fmt(100*c.baseRate*c.speed/c.linkBps)}%</b> of it.`
+              : `physical ceiling for the bandwidth gauge (0 = unset).`}),
+};
+
+function refreshNotes(){
+  if(!CFG) return;
+  const anchors = (CFG.curve && CFG.curve.anchors) || [];
+  const meanAnchor = avg(anchors)||1, maxAnchor = Math.max(0.001, ...anchors);
+  const volBytes = Number(rawFieldValue("target.volume.bytes"))||0;
+  const windowSec = parseGoDuration(rawFieldValue("target.volume.window"));
+  const meanRate = windowSec>0 ? volBytes/windowSec : 0;
+  const linkMbit = Number(rawFieldValue("network.link_capacity_mbit"))||0;
+  const c = {
+    mode: rawFieldValue("target.mode"),
+    baseRate: Number(rawFieldValue("uploader.base_rate_bps"))||0,
+    speed: Number(rawFieldValue("uploader.speed_coefficient"))||0,
+    threads: Number(rawFieldValue("uploader.threads_coefficient"))||0,
+    maxWorkers: Number(rawFieldValue("uploader.max_workers"))||0,
+    maxRamp: Number(rawFieldValue("uploader.max_ramp"))||0,
+    budgetFrac: Number(rawFieldValue("uploader.cycle_budget_fraction"))||0,
+    minD: Number(rawFieldValue("uploader.min_datagram"))||0,
+    maxD: Number(rawFieldValue("uploader.max_datagram"))||0,
+    mult: Number(rawFieldValue("target.ratio.multiplier"))||0,
+    jitter: Number(rawFieldValue("target.ratio.jitter"))||0,
+    volBytes, windowSec, windowStr: rawFieldValue("target.volume.window"),
+    meanAnchor, maxAnchor, meanRate, peakRate: meanRate*maxAnchor/meanAnchor,
+    linkBps: linkMbit*bytesPerMbit,
+    intensity: LIVE.intensity||0, deficit: LIVE.deficit||0, downloadBps: LIVE.download_bps||0,
+  };
+  for(const [p,fn] of Object.entries(NOTES)){
+    const el = document.querySelector(`.note[data-note="${p}"]`);
+    if(!el) continue;
+    let r; try{ r = fn(c); }catch(_){ r = {html:"", warn:false}; }
+    el.innerHTML = r.html||"";
+    el.classList.toggle("warn", !!r.warn);
+  }
 }
 
 /* ---- interactive 24-hour curve editor ----
@@ -746,6 +922,62 @@ $("btnApply").onclick = ()=>{
     drawCurve();                        // both lines now coincide
     loadAudit();
   }).catch(e=>{ msg.className="msg err"; msg.textContent=e.message; });
+};
+
+/* ---- auto-tune ----
+   Derive the uploader knobs from the active mode's main field(s) so throughput
+   tracks the curve instead of bursting-then-idling. Fills the form only; the
+   operator reviews and presses Apply. See docs/project.md §6.4/§6.8. */
+function setField(p, v){
+  const el = document.querySelector(`[data-path="${p}"]`);
+  if(!el) return;
+  if(FIELD_TYPE[p]==="rate"){
+    // pick the largest binary unit that keeps the shown value >= 1
+    const units = Object.entries(RATE_UNITS).sort((a,b)=>b[1]-a[1]);
+    const [u,f] = units.find(([,uf])=>v/uf>=1) || units[units.length-1];
+    document.querySelector(`[data-unit="${p}"]`).value = u;
+    el.value = v/f;
+  } else if(p==="target.volume.bytes"){ el.value = v/GIB; }
+  else { el.value = v; }
+}
+$("btnAutotune").onclick = ()=>{
+  const msg = $("cfgMsg"); msg.className="msg";
+  const mode = rawFieldValue("target.mode");
+  const anchors = (CFG.curve && CFG.curve.anchors) || [];
+  const meanAnchor = avg(anchors)||1, maxAnchor = Math.max(0.001, ...anchors);
+  // shared smoothness/parallelism knobs, sized from a target intensity-1 rate R
+  const applyPool = (R)=>{
+    const workers1 = clampf(Math.ceil(R/PER_WORKER_BPS), 10, 300);
+    const threads  = clampf(Math.round(workers1/10), 1, 30);
+    const maxWork  = clampf(Math.ceil(threads*10*maxAnchor*1.2), 1, 1000);
+    setField("uploader.threads_coefficient", threads);
+    setField("uploader.max_workers", maxWork);
+    setField("uploader.max_ramp", clampf(Math.round(maxWork/4), 1, maxWork));
+    setField("uploader.cycle_budget_fraction", BUDGET_FRACTION);
+    setField("uploader.packet_gap_max", "0s");
+  };
+  if(mode==="volume"){
+    const volBytes = Number(rawFieldValue("target.volume.bytes"))||0;
+    const windowSec = parseGoDuration(rawFieldValue("target.volume.window"));
+    if(!(volBytes>0) || !(windowSec>0)){
+      msg.className="msg err"; msg.textContent="set Volume and Volume window first"; return;
+    }
+    const meanRate = volBytes/windowSec;
+    const R = meanRate/meanAnchor*HEADROOM;          // intensity-1 send rate
+    setField("uploader.speed_coefficient", 1);
+    setField("uploader.base_rate_bps", Math.max(65536, Math.round(R)));
+    applyPool(R);
+    msg.className="msg ok";
+    msg.textContent = `auto-tuned for ${bps(meanRate)} avg (${bps(R)} at intensity 1) — review & Apply`;
+  } else {
+    // ratio is download-driven: leave base_rate/speed manual, size the pool off
+    // link capacity when known, else a conservative reference.
+    const linkBps = (Number(rawFieldValue("network.link_capacity_mbit"))||0)*bytesPerMbit;
+    applyPool(linkBps>0 ? linkBps : PER_WORKER_BPS*30);
+    msg.className="msg ok";
+    msg.textContent = "auto-tuned workers/budget (rate stays manual in ratio mode) — review & Apply";
+  }
+  refreshNotes();
 };
 
 /* ---- counter tools ---- */
