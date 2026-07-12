@@ -18,3 +18,5 @@
 
 # Project instructions — kept local, never tracked
 /CLAUDE.md
+/graphify-out/
+/.claude/
