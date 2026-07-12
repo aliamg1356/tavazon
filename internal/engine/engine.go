@@ -153,6 +153,10 @@ func (e *Engine) cycle(ctx context.Context) {
 // and persist state.
 func (e *Engine) runCycle(ctx context.Context) {
 	cfg := e.cfg()
+	// Apply dashboard edits to the traffic curve (anchors/max/wander) live, so a
+	// curve change takes effect this cycle without a restart. The curve is driven
+	// only by this goroutine, so this needs no lock.
+	e.sched.SetConfig(cfg.Curve)
 	now := time.Now()
 	start := now
 	iface := cfg.Network.Interface

@@ -69,6 +69,26 @@ func TestIntensityStaysInBounds(t *testing.T) {
 	}
 }
 
+func TestSetConfigAppliesLive(t *testing.T) {
+	// Flat anchors + no wander make Intensity equal the anchor value exactly.
+	flat := func(v float64) config.CurveConfig {
+		var a [24]float64
+		for i := range a {
+			a[i] = v
+		}
+		return config.CurveConfig{Anchors: a, Max: 100, WanderStrength: 0}
+	}
+	c := NewCurve(flat(1), rand.New(rand.NewPCG(1, 2)))
+	now := time.Date(2026, 5, 17, 9, 30, 0, 0, time.UTC)
+	if v := c.Intensity(now); math.Abs(v-1) > 1e-9 {
+		t.Fatalf("intensity = %v, want 1 before SetConfig", v)
+	}
+	c.SetConfig(flat(3))
+	if v := c.Intensity(now); math.Abs(v-3) > 1e-9 {
+		t.Fatalf("intensity = %v, want 3 after SetConfig", v)
+	}
+}
+
 func TestRatioDeficit(t *testing.T) {
 	rng := rand.New(rand.NewPCG(1, 2))
 	cfg := config.Default().Target.Ratio // multiplier 8, jitter 0.3, min 1 GiB

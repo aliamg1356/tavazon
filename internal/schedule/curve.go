@@ -43,6 +43,17 @@ func NewCurve(cfg config.CurveConfig, rng *rand.Rand) *Curve {
 	}
 }
 
+// SetConfig updates the curve's shape parameters (anchors, max, wander) from
+// cfg while preserving the live wander state, so a dashboard edit to the traffic
+// curve takes effect without a restart. It is called from the engine's single
+// cycle goroutine — the same one that drives Intensity — so it needs no lock.
+func (c *Curve) SetConfig(cfg config.CurveConfig) {
+	c.anchors = cfg.Anchors
+	c.max = cfg.Max
+	c.wanderStrength = cfg.WanderStrength
+	c.wanderReversion = cfg.WanderReversion.Std()
+}
+
 // Intensity returns the traffic-intensity multiplier for the given instant:
 // the spline value at the Tehran-local time of day, scaled by the wander and
 // clamped to [0, max].

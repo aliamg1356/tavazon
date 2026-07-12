@@ -19,23 +19,46 @@ type asnPool struct {
 }
 
 // Targets generates random destination IP/port pairs spread across the
-// operator's selected ASNs. RandomTarget is safe for concurrent use.
+// operator's selected ASNs. RandomTarget is safe for concurrent use. The pool
+// is rebuilt in place by EnsureSelection when the operator's selection changes,
+// so g and the last-built selection are retained.
 type Targets struct {
 	mu          sync.Mutex
+	g           *geoip.GeoIP
 	pools       []asnPool
 	totalWeight uint64
 	cfg         config.TargetsConfig
+	selected    []uint32 // the selection the current pools were built from
 	rng         *rand.Rand
 }
 
 // New resolves the selected ASNs to their IPv4 prefixes via g. ASNs the
 // database does not know are returned in skipped and otherwise ignored. New
 // errors only if ASNs were requested but none resolved; an empty selectedASNs
-// list yields an idle (Empty) Targets with no error.
+// list yields an idle (Empty) Targets with no error. The returned Targets is
+// always non-nil (even on error) and retains g, so EnsureSelection can rebuild
+// the pool later when the selection changes.
 func New(g *geoip.GeoIP, selectedASNs []uint32, cfg config.TargetsConfig, rng *rand.Rand) (t *Targets, skipped []uint32, err error) {
-	t = &Targets{cfg: cfg, rng: rng}
-	for _, asn := range selectedASNs {
-		prefixes := g.Prefixes(asn)
+	t = &Targets{g: g, cfg: cfg, rng: rng}
+	skipped = t.rebuild(selectedASNs)
+	if len(selectedASNs) > 0 && len(t.pools) == 0 {
+		err = fmt.Errorf("targets: none of the %d selected ASNs resolved to an IPv4 prefix", len(selectedASNs))
+	}
+	return t, skipped, err
+}
+
+// rebuild replaces the pool set with one resolved from selected, recording what
+// it was built from. The caller must hold the only reference (New) or t.mu
+// (EnsureSelection). A nil geoip leaves the pool empty.
+func (t *Targets) rebuild(selected []uint32) (skipped []uint32) {
+	t.pools = nil
+	t.totalWeight = 0
+	t.selected = append([]uint32(nil), selected...)
+	if t.g == nil {
+		return nil
+	}
+	for _, asn := range selected {
+		prefixes := t.g.Prefixes(asn)
 		var w uint64
 		for i := range prefixes {
 			w += prefixSize(prefixes[i])
@@ -47,14 +70,42 @@ func New(g *geoip.GeoIP, selectedASNs []uint32, cfg config.TargetsConfig, rng *r
 		t.pools = append(t.pools, asnPool{asn: asn, prefixes: prefixes, weight: w})
 		t.totalWeight += w
 	}
-	if len(selectedASNs) > 0 && len(t.pools) == 0 {
-		return nil, skipped, fmt.Errorf("targets: none of the %d selected ASNs resolved to an IPv4 prefix", len(selectedASNs))
+	return skipped
+}
+
+// EnsureSelection rebuilds the pool in place when the selected ASNs or the
+// targets config have changed since the pool was last built, so a dashboard
+// edit takes effect without a service restart. The engine calls it at the top
+// of each cycle, before any worker draws a target, so no draw races the swap.
+func (t *Targets) EnsureSelection(selected []uint32, cfg config.TargetsConfig) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.cfg == cfg && sameASNs(t.selected, selected) {
+		return
 	}
-	return t, skipped, nil
+	t.cfg = cfg
+	t.rebuild(selected)
+}
+
+// sameASNs reports whether two selections are element-wise equal.
+func sameASNs(a, b []uint32) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // Empty reports whether no ASN resolved, i.e. the uploader should stay idle.
-func (t *Targets) Empty() bool { return len(t.pools) == 0 }
+func (t *Targets) Empty() bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return len(t.pools) == 0
+}
 
 // RandomTarget picks a random destination: an ASN weighted by its IP count, a
 // prefix within it weighted by prefix size, a uniform host inside that prefix,

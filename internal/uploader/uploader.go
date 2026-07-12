@@ -41,7 +41,13 @@ func New(tg *targets.Targets, m *metrics.Registry, store *metering.Store, cfg fu
 // curve (docs/project.md §6.4, §6.8). It blocks until done or ctx is cancelled,
 // and returns the bytes actually sent.
 func (u *Uploader) RunCycle(ctx context.Context, budget int64, workers int, ratePerSec float64) int64 {
-	uc := u.cfg().Uploader
+	cfg := u.cfg()
+	// Pick up dashboard edits to the selected ASNs (or targets config) live:
+	// rebuild the destination pool here, before any worker draws a target, so a
+	// change takes effect on this cycle without a service restart. This is the
+	// only place the pool is (re)built, and no worker is running yet.
+	u.targets.EnsureSelection(cfg.GeoIP.SelectedASNs, cfg.Targets)
+	uc := cfg.Uploader
 	if workers < 1 {
 		workers = 1
 	}

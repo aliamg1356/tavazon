@@ -740,7 +740,7 @@ $("btnApply").onclick = ()=>{
   CFG.geoip.selected_asns = [...SEL];
   CFG.curve.anchors = curveEdit.slice();
   api("/api/config",{method:"PUT",body:JSON.stringify(CFG)}).then(j=>{
-    msg.className="msg ok"; msg.textContent = j.change ? "applied: "+j.change : "applied (no change)";
+    msg.className="msg ok"; msg.textContent = j.change ? "applied (live within a few seconds): "+j.change : "applied (no change)";
     curveActual = curveEdit.slice();   // the pending edit is now production
     curveYMax = Math.max(2.5, Number(CFG.curve.max)||2.5);
     drawCurve();                        // both lines now coincide

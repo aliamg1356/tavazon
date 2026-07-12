@@ -104,8 +104,10 @@ func main() {
 	}
 	tg, skipped, err := targets.New(g, selected, cfg.Targets, mkRNG())
 	if err != nil {
-		log.Error("targets: no selected ASN resolved — uploader idle", "err", err)
-		tg, _, _ = targets.New(nil, nil, cfg.Targets, mkRNG())
+		// Not fatal, and we keep this (empty) Targets: it retains the GeoIP handle,
+		// so a later dashboard change to the selected ASNs rebuilds the pool live,
+		// with no restart.
+		log.Error("targets: no selected ASN resolved — uploader idle until ASNs change", "err", err)
 	}
 	if len(skipped) > 0 {
 		log.Warn("some selected ASNs were not found in the database", "asns", skipped)

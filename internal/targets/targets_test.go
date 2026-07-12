@@ -65,6 +65,61 @@ func TestNewAllUnknownErrors(t *testing.T) {
 	}
 }
 
+func TestEnsureSelectionRebuildsLive(t *testing.T) {
+	g := testGeoIP(t)
+	cfg := testCfg()
+	// Start idle: no ASNs selected.
+	tg, _, err := New(g, nil, cfg, rand.New(rand.NewPCG(1, 2)))
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if !tg.Empty() {
+		t.Fatal("Targets should start Empty with no selection")
+	}
+
+	// Selecting ASN 100 live must make it resolve without a rebuild via New.
+	tg.EnsureSelection([]uint32{100}, cfg)
+	if tg.Empty() {
+		t.Fatal("EnsureSelection([100]) should populate the pool")
+	}
+	for i := 0; i < 200; i++ {
+		if _, _, asn := tg.RandomTarget(); asn != 100 {
+			t.Fatalf("RandomTarget asn = %d, want 100", asn)
+		}
+	}
+
+	// Switching the selection swaps the pool in place.
+	tg.EnsureSelection([]uint32{300}, cfg)
+	for i := 0; i < 200; i++ {
+		if _, _, asn := tg.RandomTarget(); asn != 300 {
+			t.Fatalf("after switch, RandomTarget asn = %d, want 300", asn)
+		}
+	}
+
+	// Clearing the selection returns to idle.
+	tg.EnsureSelection(nil, cfg)
+	if !tg.Empty() {
+		t.Fatal("EnsureSelection(nil) should empty the pool")
+	}
+
+	// An all-unknown selection also yields an idle pool (no panic, no targets).
+	tg.EnsureSelection([]uint32{999}, cfg)
+	if !tg.Empty() {
+		t.Fatal("EnsureSelection([999]) should stay Empty: unknown ASN")
+	}
+}
+
+func TestEnsureSelectionNilGeoIPStaysEmpty(t *testing.T) {
+	tg, _, err := New(nil, nil, testCfg(), rand.New(rand.NewPCG(1, 2)))
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	tg.EnsureSelection([]uint32{100}, testCfg())
+	if !tg.Empty() {
+		t.Error("with nil GeoIP the pool must stay Empty even after selection")
+	}
+}
+
 func TestRandomTargetCoverageAndBounds(t *testing.T) {
 	g := testGeoIP(t)
 	prefixes := map[uint32][]net.IPNet{

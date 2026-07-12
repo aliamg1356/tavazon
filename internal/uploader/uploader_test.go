@@ -75,6 +75,9 @@ func TestTokenBucketLimits(t *testing.T) {
 func devConfig() *config.Config {
 	c := config.Default()
 	c.Targets = config.TargetsConfig{PortMin: 20000, PortMax: 30000}
+	// RunCycle reconciles the target pool to cfg.GeoIP.SelectedASNs each cycle, so
+	// the config must name the ASN the test's Targets were built from (4242).
+	c.GeoIP.SelectedASNs = []uint32{4242}
 	c.Uploader.PacketGapMax = 0 // no inter-packet sleep — keep the test fast
 	return c
 }
