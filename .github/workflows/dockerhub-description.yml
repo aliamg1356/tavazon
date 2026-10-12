@@ -1,0 +1,48 @@
+name: dockerhub-description
+
+# Syncs .github/DOCKERHUB.md and the short description to the Docker Hub repo
+# whenever they change on main. Needs repo secrets DOCKERHUB_USERNAME and
+# DOCKERHUB_TOKEN; the token must have Read, Write, Delete scope.
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/DOCKERHUB.md
+      - .github/workflows/dockerhub-description.yml
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # The description API needs the repo to exist; create it on first run.
+      - name: Ensure Docker Hub repository
+        env:
+          HUB_USER: ${{ secrets.DOCKERHUB_USERNAME }}
+          HUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          jwt=$(jq -n --arg u "$HUB_USER" --arg p "$HUB_TOKEN" '{identifier:$u, secret:$p}' |
+            curl -fsS -X POST -H 'Content-Type: application/json' -d @- \
+              https://hub.docker.com/v2/auth/token | jq -r .access_token)
+          echo "::add-mask::$jwt"
+          code=$(curl -sS -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $jwt" \
+            https://hub.docker.com/v2/repositories/s4l3h1/tavazon/)
+          if [ "$code" = 404 ]; then
+            jq -n '{namespace:"s4l3h1", name:"tavazon", registry:"docker.io", is_private:false}' |
+              curl -fsS -X POST -H "Authorization: Bearer $jwt" -H 'Content-Type: application/json' \
+                -d @- https://hub.docker.com/v2/namespaces/s4l3h1/repositories -o /dev/null
+            echo "created s4l3h1/tavazon"
+          else
+            echo "s4l3h1/tavazon exists (HTTP $code)"
+          fi
+
+      - uses: peter-evans/dockerhub-description@v5
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          repository: s4l3h1/tavazon
+          short-description: Balance an asymmetric hosting quota with shaped, distributed junk UDP traffic.
+          readme-filepath: .github/DOCKERHUB.md

@@ -7,7 +7,7 @@
 
 VERSION  ?= dev
 GO_IMAGE ?= golang:1.27
-IMAGE    ?= salehi/tavazon:latest
+IMAGE    ?= s4l3h1/tavazon:latest
 COMPOSE  ?= docker compose
 
 BIN     := tavazon
@@ -57,12 +57,16 @@ check: fmt vet test ## Format, vet, and test
 # ---- container image & service ----
 
 .PHONY: image
-image: ## Build the Docker image
+image: ## Build the Docker image for this machine's platform
 	docker build --build-arg VERSION=$(VERSION) -t $(IMAGE) .
 
+.PHONY: pull
+pull: ## Pull the published image from Docker Hub
+	$(COMPOSE) pull
+
 .PHONY: up
-up: ## Build and start the service via docker compose
-	$(COMPOSE) up -d --build
+up: ## Start the service via docker compose (local `make image` build, else Docker Hub)
+	$(COMPOSE) up -d
 
 .PHONY: down
 down: ## Stop the service

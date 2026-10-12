@@ -1,7 +1,8 @@
 services:
   tavazon:
-    build: .
-    image: salehi/tavazon:latest
+    # Published multi-arch image (amd64, arm64, armv7). `make image` builds the
+    # same tag locally from source.
+    image: s4l3h1/tavazon:latest
     restart: always
     network_mode: host          # needs the host's real NIC counters
     volumes:

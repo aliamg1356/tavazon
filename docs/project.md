@@ -1155,30 +1155,45 @@ engine) continues the loop.
 
 ```dockerfile
 # ---- build ----
-FROM golang:1.27 AS build
+FROM --platform=$BUILDPLATFORM golang:1.27 AS build
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends upx-ucl \
+ && rm -rf /var/lib/apt/lists/*
 WORKDIR /src
-COPY . .
-RUN CGO_ENABLED=0 go build -trimpath -mod=vendor -ldflags "-s -w" -o /tavazon ./cmd/tavazon
+COPY go.mod go.sum ./
+COPY vendor/ vendor/
+COPY cmd/ cmd/
+COPY internal/ internal/
+ARG TARGETOS TARGETARCH TARGETVARIANT
+ARG VERSION=dev
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH GOARM=${TARGETVARIANT#v} \
+    go build -trimpath -mod=vendor \
+    -ldflags "-s -w -X main.version=${VERSION}" -o /out/tavazon ./cmd/tavazon \
+ && upx --best --lzma -q /out/tavazon
 
 # ---- run ----
 FROM scratch
-COPY --from=build /tavazon /tavazon
+COPY --from=build /out/tavazon /tavazon
 COPY config.example.json /config.json
 VOLUME ["/data"]
 EXPOSE 8081
 ENTRYPOINT ["/tavazon", "-config", "/config.json"]
 ```
 
-`-mod=vendor` builds from the committed `vendor/` tree — no network. The `.mmdb` files
-are **not** baked in; they are mounted via the `/data` volume by the operator.
+The build stage runs natively and cross-compiles to the target, so the multi-arch
+image (`linux/amd64`, `linux/arm64`, `linux/arm/v7`) needs no QEMU to build.
+`-mod=vendor` builds from the committed `vendor/` tree, so Go fetches nothing from
+the network. The stripped binary is packed with UPX, and the final image is about
+2 MB. The `.mmdb` files are **not** baked in; the operator mounts them at
+`/maxmind_files`. CI publishes the image to Docker Hub as `s4l3h1/tavazon` on every
+`release-*` tag.
 
 ### 14.2 `docker-compose.yml`
 
 ```yaml
 services:
   tavazon:
-    build: .
-    image: salehi/tavazon:latest
+    image: s4l3h1/tavazon:latest
     restart: always
     network_mode: host          # needs the host's real NIC counters
     volumes:

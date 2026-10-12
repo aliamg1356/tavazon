@@ -98,10 +98,10 @@ If all three pass, the rename is complete and the code is not corrupted.
 `docker-compose.yml` contains:
 
 ```yaml
-image: salehi/tavazon:latest
+image: s4l3h1/tavazon:latest
 ```
 
-That `salehi/tavazon` is a **Docker image name/tag**, a completely separate
+That `s4l3h1/tavazon` is a **Docker image name/tag**, a completely separate
 namespace from the Go module path. It does not affect compilation. Rename
 it only if you also want the published container image to be called
 something else — that is a deployment decision, not a code-correctness one.

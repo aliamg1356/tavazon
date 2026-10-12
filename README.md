@@ -10,6 +10,10 @@
 [![Go version](https://img.shields.io/github/go-mod/go-version/salehi/tavazon?logo=go&logoColor=white)](go.mod)
 [![License: MIT](https://img.shields.io/github/license/salehi/tavazon?color=yellow)](LICENSE)
 <br>
+[![Docker image](https://img.shields.io/docker/v/s4l3h1/tavazon?sort=semver&label=docker&logo=docker&logoColor=white)](https://hub.docker.com/r/s4l3h1/tavazon)
+[![Image size](https://img.shields.io/docker/image-size/s4l3h1/tavazon/latest?logo=docker&logoColor=white&label=image%20size)](https://hub.docker.com/r/s4l3h1/tavazon/tags)
+[![Docker pulls](https://img.shields.io/docker/pulls/s4l3h1/tavazon?logo=docker&logoColor=white)](https://hub.docker.com/r/s4l3h1/tavazon)
+<br>
 [![Platforms](https://img.shields.io/badge/runtime-linux%20%7C%20amd64%20%C2%B7%20arm64%20%C2%B7%20armv7-informational?logo=linux&logoColor=white)](#install)
 [![CGO](https://img.shields.io/badge/CGO-disabled-success)](#build-from-source)
 [![Dependencies](https://img.shields.io/badge/dependencies-1%20(vendored)-success)](docs/RED_LINES.md#x1--curated-vendored-dependencies)
@@ -169,7 +173,7 @@ These limits are hard constraints, documented in
 | Method | Best for | Runtime |
 |---|---|---|
 | [One-line installer](#one-line-installer-linux--systemd) | Production Linux servers | systemd service in `/opt/tavazon` |
-| [Docker](#docker) | Container hosts, quick trials | `scratch` image, host networking |
+| [Docker](#docker) | Container hosts, quick trials | ~2 MB `scratch` image from Docker Hub, host networking |
 | [Release archives](#release-archives) | Manual or air-gapped installs | Any supported OS/arch |
 | [Build from source](#build-from-source) | Development | Docker only; Go is not needed on the host |
 
@@ -207,38 +211,38 @@ curl -fsSL .../install.sh | sh -s -- 1.3.2                 # pin a version inste
 
 ### Docker
 
-The [Dockerfile](Dockerfile) is a two-stage build. The binary is compiled offline
-in `golang:1.27` from the vendored sources, then copied into an empty `scratch`
-image. Tavazon is static and does no DNS or TLS, so the image needs nothing else.
+Every release is published to Docker Hub as
+[`s4l3h1/tavazon`](https://hub.docker.com/r/s4l3h1/tavazon), a multi-arch image
+of about 2 MB:
 
-| Image | Base | Contents | Exposes |
-|---|---|---|---|
-| `salehi/tavazon:latest` | `scratch` | `/tavazon` binary, default `/config.json` | `8081` (dashboard), volume `/data` |
+| Image | Platforms | Base | Contents | Exposes |
+|---|---|---|---|---|
+| `s4l3h1/tavazon` | `linux/amd64`, `linux/arm64`, `linux/arm/v7` | `scratch` | `/tavazon` binary, default `/config.json` | `8081` (dashboard), volume `/data` |
 
-> **No prebuilt image is published to a registry yet.** You build it locally with
-> one command, shown below. The tag above is the local name used by the
-> [Makefile](Makefile) and [docker-compose.yml](docker-compose.yml).
+Tags: `latest`, plus `X.Y.Z`, `X.Y` and `X` for each release, so `s4l3h1/tavazon:1`
+follows the newest 1.x.
 
 **With Docker Compose (recommended):**
 
 ```sh
-git clone https://github.com/salehi/tavazon.git && cd tavazon
-cp config.example.json config.json         # create this before the first run, or Docker makes a directory
-# copy GeoLite2-ASN.mmdb and GeoLite2-Country.mmdb into ./maxmind_files/
-docker compose up -d --build               # or: make up
+mkdir tavazon && cd tavazon
+curl -fsSLO https://raw.githubusercontent.com/salehi/tavazon/main/docker-compose.yml
+curl -fsSL  https://raw.githubusercontent.com/salehi/tavazon/main/config.example.json -o config.json  # create before the first run, or Docker makes a directory
+mkdir -p data maxmind_files                # copy GeoLite2-ASN.mmdb and GeoLite2-Country.mmdb into ./maxmind_files/
+docker compose up -d                       # or: make up
 docker compose logs -f                     # or: make logs
 ```
+
+To update, run `docker compose pull && docker compose up -d`.
 
 **With plain Docker:**
 
 ```sh
-make image VERSION=1.3.2                   # builds and tags salehi/tavazon:latest
-
 docker run -d --name tavazon --restart always --network host \
   -v "$PWD/config.json:/config.json" \
   -v "$PWD/data:/data" \
   -v "$PWD/maxmind_files:/maxmind_files:ro" \
-  salehi/tavazon:latest
+  s4l3h1/tavazon:latest
 ```
 
 Things to know:
@@ -250,6 +254,16 @@ Things to know:
 - Environment variables override `config.json` on every start. The sample compose
   file sets `TAVAZON_TARGET_RATIO_MULTIPLIER=8`. Remove that line if you want a
   multiplier set in the dashboard to survive a restart.
+
+**How the image stays small.** The [Dockerfile](Dockerfile) is a two-stage build.
+The first stage runs `golang:1.27` on the build machine's own platform and
+cross-compiles the static, CGO-free binary offline from the vendored sources. It
+strips the symbol and debug tables (`-s -w`) and packs the binary with
+[UPX](https://upx.github.io/). The final stage is an empty `scratch` image holding
+only that binary and the default config. Tavazon does no DNS or TLS and embeds its
+time zone data, so it needs nothing else. To build the image yourself, run
+`make image VERSION=1.3.2`. It is tagged `s4l3h1/tavazon:latest`, so `make up`
+uses it in place of the published one.
 
 ### Release archives
 
@@ -280,7 +294,7 @@ The host needs only Docker. The [Makefile](Makefile) runs every Go command insid
 make build        # -> bin/tavazon  (static, CGO-free, built offline with -mod=vendor)
 make test         # run the test suite
 make check        # fmt + vet + test
-make image        # build the Docker image
+make image        # build the Docker image for this machine
 make help         # list all targets
 ```
 
