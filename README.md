@@ -10,7 +10,7 @@
 [![Go version](https://img.shields.io/github/go-mod/go-version/salehi/tavazon?logo=go&logoColor=white)](go.mod)
 [![License: MIT](https://img.shields.io/github/license/salehi/tavazon?color=yellow)](LICENSE)
 <br>
-[![Docker image](https://img.shields.io/docker/v/s4l3h1/tavazon?sort=semver&label=docker&logo=docker&logoColor=white)](https://hub.docker.com/r/s4l3h1/tavazon)
+[![Docker Hub](https://img.shields.io/badge/docker%20hub-s4l3h1%2Ftavazon-2496ED?logo=docker&logoColor=white)](https://hub.docker.com/r/s4l3h1/tavazon)
 [![Image size](https://img.shields.io/docker/image-size/s4l3h1/tavazon/latest?logo=docker&logoColor=white&label=image%20size)](https://hub.docker.com/r/s4l3h1/tavazon/tags)
 [![Docker pulls](https://img.shields.io/docker/pulls/s4l3h1/tavazon?logo=docker&logoColor=white)](https://hub.docker.com/r/s4l3h1/tavazon)
 [![Docker Hub sync](https://img.shields.io/github/actions/workflow/status/salehi/tavazon/dockerhub-description.yml?branch=main&label=docker%20hub%20sync&logo=githubactions&logoColor=white)](https://github.com/salehi/tavazon/actions/workflows/dockerhub-description.yml)

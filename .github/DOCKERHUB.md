@@ -3,7 +3,7 @@
 **Keep an asymmetric hosting quota in balance by sending shaped, distributed junk traffic.**
 
 [![Release build](https://img.shields.io/github/actions/workflow/status/salehi/tavazon/release.yml?label=release%20build&logo=githubactions&logoColor=white)](https://github.com/salehi/tavazon/actions/workflows/release.yml)
-[![Docker image](https://img.shields.io/docker/v/s4l3h1/tavazon?sort=semver&label=docker&logo=docker&logoColor=white)](https://hub.docker.com/r/s4l3h1/tavazon/tags)
+[![Docker Hub](https://img.shields.io/badge/docker%20hub-s4l3h1%2Ftavazon-2496ED?logo=docker&logoColor=white)](https://hub.docker.com/r/s4l3h1/tavazon/tags)
 [![Image size](https://img.shields.io/docker/image-size/s4l3h1/tavazon/latest?logo=docker&logoColor=white&label=image%20size)](https://hub.docker.com/r/s4l3h1/tavazon/tags)
 [![GitHub](https://img.shields.io/badge/source-salehi%2Ftavazon-181717?logo=github)](https://github.com/salehi/tavazon)
 
