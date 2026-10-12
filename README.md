@@ -263,6 +263,9 @@ Every `release-*` tag is built by
 | macOS | ✅ | ✅ | not available |
 | Windows | ✅ | ✅ | not available |
 
+Go has no 32-bit ARM target for macOS, and Go 1.26 removed the one for Windows, so
+Windows armv7 archives exist only for releases built before the move to Go 1.27.
+
 Each archive contains the binary, `config.example.json`, `tavazon.service`, this
 README and the LICENSE. Only **Linux** can generate traffic, because Tavazon reads
 `/proc/net/dev`. The macOS and Windows builds compile and run the dashboard, which
