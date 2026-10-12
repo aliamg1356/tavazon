@@ -4,21 +4,45 @@
 
 **Keep an asymmetric hosting quota in balance by sending shaped, distributed junk traffic.**
 
-[![Release](https://img.shields.io/github/v/release/salehi/tavazon?display_name=tag&sort=semver&label=release&color=2ea44f)](https://github.com/salehi/tavazon/releases/latest)
-[![Release build](https://img.shields.io/github/actions/workflow/status/salehi/tavazon/release.yml?label=release%20build&logo=githubactions&logoColor=white)](https://github.com/salehi/tavazon/actions/workflows/release.yml)
-[![Downloads](https://img.shields.io/github/downloads/salehi/tavazon/total?color=blue&logo=github)](https://github.com/salehi/tavazon/releases)
-[![Go version](https://img.shields.io/github/go-mod/go-version/salehi/tavazon?logo=go&logoColor=white)](go.mod)
-[![License: MIT](https://img.shields.io/github/license/salehi/tavazon?color=yellow)](LICENSE)
-<br>
-[![Docker Hub](https://img.shields.io/badge/docker%20hub-s4l3h1%2Ftavazon-2496ED?logo=docker&logoColor=white)](https://hub.docker.com/r/s4l3h1/tavazon)
-[![Image size](https://img.shields.io/docker/image-size/s4l3h1/tavazon/latest?logo=docker&logoColor=white&label=image%20size)](https://hub.docker.com/r/s4l3h1/tavazon/tags)
-[![Docker pulls](https://img.shields.io/docker/pulls/s4l3h1/tavazon?logo=docker&logoColor=white)](https://hub.docker.com/r/s4l3h1/tavazon)
-[![Docker Hub sync](https://img.shields.io/github/actions/workflow/status/salehi/tavazon/dockerhub-description.yml?branch=main&label=docker%20hub%20sync&logo=githubactions&logoColor=white)](https://github.com/salehi/tavazon/actions/workflows/dockerhub-description.yml)
-<br>
-[![Platforms](https://img.shields.io/badge/runtime-linux%20%7C%20amd64%20%C2%B7%20arm64%20%C2%B7%20armv7-informational?logo=linux&logoColor=white)](#install)
-[![CGO](https://img.shields.io/badge/CGO-disabled-success)](#build-from-source)
-[![Dependencies](https://img.shields.io/badge/dependencies-1%20(vendored)-success)](docs/RED_LINES.md#x1--curated-vendored-dependencies)
-[![Dashboard](https://img.shields.io/badge/dashboard-embedded%2C%20no%20CDN-blueviolet)](#the-dashboard)
+<table>
+  <tr>
+    <td align="right"><b>Release</b></td>
+    <td>
+      <a href="https://github.com/salehi/tavazon/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/salehi/tavazon?display_name=tag&sort=semver&label=latest&color=2ea44f"></a>&nbsp;
+      <a href="https://github.com/salehi/tavazon/releases"><img alt="Downloads" src="https://img.shields.io/github/downloads/salehi/tavazon/total?color=blue&logo=github"></a>
+    </td>
+  </tr>
+  <tr>
+    <td align="right"><b>Pipelines</b></td>
+    <td>
+      <a href="https://github.com/salehi/tavazon/actions/workflows/release.yml"><img alt="Release build" src="https://img.shields.io/github/actions/workflow/status/salehi/tavazon/release.yml?label=release%20build&logo=githubactions&logoColor=white"></a>&nbsp;
+      <a href="https://github.com/salehi/tavazon/actions/workflows/dockerhub-description.yml"><img alt="Docker Hub sync" src="https://img.shields.io/github/actions/workflow/status/salehi/tavazon/dockerhub-description.yml?branch=main&label=docker%20hub%20sync&logo=githubactions&logoColor=white"></a>
+    </td>
+  </tr>
+  <tr>
+    <td align="right"><b>Docker</b></td>
+    <td>
+      <a href="https://hub.docker.com/r/s4l3h1/tavazon"><img alt="Docker Hub" src="https://img.shields.io/badge/docker%20hub-s4l3h1%2Ftavazon-2496ED?logo=docker&logoColor=white"></a>&nbsp;
+      <a href="https://hub.docker.com/r/s4l3h1/tavazon"><img alt="Docker pulls" src="https://img.shields.io/docker/pulls/s4l3h1/tavazon?logo=docker&logoColor=white"></a>
+    </td>
+  </tr>
+  <tr>
+    <td align="right"><b>Runs on</b></td>
+    <td>
+      <a href="#install"><img alt="Platforms" src="https://img.shields.io/badge/linux-amd64%20%C2%B7%20arm64%20%C2%B7%20armv7-informational?logo=linux&logoColor=white"></a>&nbsp;
+      <a href="#the-dashboard"><img alt="Dashboard" src="https://img.shields.io/badge/dashboard-embedded%2C%20no%20CDN-blueviolet"></a>
+    </td>
+  </tr>
+  <tr>
+    <td align="right"><b>Built with</b></td>
+    <td>
+      <a href="go.mod"><img alt="Go version" src="https://img.shields.io/github/go-mod/go-version/salehi/tavazon?logo=go&logoColor=white"></a>&nbsp;
+      <a href="#build-from-source"><img alt="CGO disabled" src="https://img.shields.io/badge/CGO-disabled-success"></a>&nbsp;
+      <a href="docs/RED_LINES.md#x1--curated-vendored-dependencies"><img alt="Dependencies" src="https://img.shields.io/badge/dependencies-1%20(vendored)-success"></a>&nbsp;
+      <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/github/license/salehi/tavazon?color=yellow"></a>
+    </td>
+  </tr>
+</table>
 
 </div>
 

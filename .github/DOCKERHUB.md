@@ -4,7 +4,6 @@
 
 [![Release build](https://img.shields.io/github/actions/workflow/status/salehi/tavazon/release.yml?label=release%20build&logo=githubactions&logoColor=white)](https://github.com/salehi/tavazon/actions/workflows/release.yml)
 [![Docker Hub](https://img.shields.io/badge/docker%20hub-s4l3h1%2Ftavazon-2496ED?logo=docker&logoColor=white)](https://hub.docker.com/r/s4l3h1/tavazon/tags)
-[![Image size](https://img.shields.io/docker/image-size/s4l3h1/tavazon/latest?logo=docker&logoColor=white&label=image%20size)](https://hub.docker.com/r/s4l3h1/tavazon/tags)
 [![GitHub](https://img.shields.io/badge/source-salehi%2Ftavazon-181717?logo=github)](https://github.com/salehi/tavazon)
 
 Tavazon reads your server's real network counters, works out how much **upload** you
