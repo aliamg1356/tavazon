@@ -13,6 +13,7 @@
 [![Docker image](https://img.shields.io/docker/v/s4l3h1/tavazon?sort=semver&label=docker&logo=docker&logoColor=white)](https://hub.docker.com/r/s4l3h1/tavazon)
 [![Image size](https://img.shields.io/docker/image-size/s4l3h1/tavazon/latest?logo=docker&logoColor=white&label=image%20size)](https://hub.docker.com/r/s4l3h1/tavazon/tags)
 [![Docker pulls](https://img.shields.io/docker/pulls/s4l3h1/tavazon?logo=docker&logoColor=white)](https://hub.docker.com/r/s4l3h1/tavazon)
+[![Docker Hub sync](https://img.shields.io/github/actions/workflow/status/salehi/tavazon/dockerhub-description.yml?branch=main&label=docker%20hub%20sync&logo=githubactions&logoColor=white)](https://github.com/salehi/tavazon/actions/workflows/dockerhub-description.yml)
 <br>
 [![Platforms](https://img.shields.io/badge/runtime-linux%20%7C%20amd64%20%C2%B7%20arm64%20%C2%B7%20armv7-informational?logo=linux&logoColor=white)](#install)
 [![CGO](https://img.shields.io/badge/CGO-disabled-success)](#build-from-source)
@@ -206,7 +207,7 @@ Overrides:
 
 ```sh
 curl -fsSL .../install.sh | TAVAZON_DIR=/srv/tavazon sh    # install dir (default /opt/tavazon)
-curl -fsSL .../install.sh | sh -s -- 1.3.2                 # pin a version instead of the latest
+curl -fsSL .../install.sh | sh -s -- 2.0.0                 # pin a version instead of the latest
 ```
 
 ### Docker
@@ -262,7 +263,7 @@ strips the symbol and debug tables (`-s -w`) and packs the binary with
 [UPX](https://upx.github.io/). The final stage is an empty `scratch` image holding
 only that binary and the default config. Tavazon does no DNS or TLS and embeds its
 time zone data, so it needs nothing else. To build the image yourself, run
-`make image VERSION=1.3.2`. It is tagged `s4l3h1/tavazon:latest`, so `make up`
+`make image VERSION=2.0.0`. It is tagged `s4l3h1/tavazon:latest`, so `make up`
 uses it in place of the published one.
 
 ### Release archives
