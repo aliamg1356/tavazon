@@ -34,7 +34,7 @@ All plans assume this prefix (define it as a shell function locally — not comm
 
 ```sh
 gobox() { docker run --rm -u "$(id -u):$(id -g)" -e GOCACHE=/tmp/gocache \
-  -v "$PWD":/work -w /work golang:1.22 "$@"; }
+  -v "$PWD":/work -w /work golang:1.27 "$@"; }
 ```
 
 Then: `gobox go test -race -mod=vendor ./...`, etc. See project.md §16.

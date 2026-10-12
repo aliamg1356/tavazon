@@ -6,7 +6,7 @@
 # a local Go toolchain instead, override it, e.g.  `make build GO=go`.
 
 VERSION  ?= dev
-GO_IMAGE ?= golang:1.22
+GO_IMAGE ?= golang:1.27
 IMAGE    ?= salehi/tavazon:latest
 COMPOSE  ?= docker compose
 

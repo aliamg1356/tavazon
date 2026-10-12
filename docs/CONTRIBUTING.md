@@ -30,7 +30,7 @@ bind-mounted at `/work` — see [project.md §16](project.md). The pattern:
 
 ```sh
 docker run --rm -u "$(id -u):$(id -g)" -e GOCACHE=/tmp/gocache \
-  -v "$PWD":/work -w /work golang:1.22 <go command>
+  -v "$PWD":/work -w /work golang:1.27 <go command>
 ```
 
 It is worth wrapping that prefix in a shell alias/function for your own convenience
@@ -38,7 +38,7 @@ It is worth wrapping that prefix in a shell alias/function for your own convenie
 
 ```sh
 gobox() { docker run --rm -u "$(id -u):$(id -g)" -e GOCACHE=/tmp/gocache \
-  -v "$PWD":/work -w /work golang:1.22 "$@"; }
+  -v "$PWD":/work -w /work golang:1.27 "$@"; }
 ```
 
 Then the day-to-day commands are:
@@ -51,7 +51,7 @@ gobox gofmt -l .                       # lists unformatted files; empty = clean
 gobox go mod vendor                    # after any go.mod change
 ```
 
-- `go test -race` needs a C compiler — keep the Debian-based `golang:1.22` image, not
+- `go test -race` needs a C compiler — keep the Debian-based `golang:1.27` image, not
   `-alpine`.
 - `-u "$(id -u):$(id -g)"` keeps generated files (`vendor/`, the binary) owned by you,
   not root.

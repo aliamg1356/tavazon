@@ -11,7 +11,7 @@
 
 ## 1. Language & tooling
 
-- **Go 1.22+.** `go.mod` declares `go 1.22`. Use language features available there
+- **Go 1.27+.** `go.mod` declares `go 1.27`. Use language features available there
   (`math/rand/v2`, generics where they genuinely simplify).
 - **One vendored dependency.** `maxminddb-golang` only; everything else is stdlib
   (RED_LINES X1). No new third-party import without a project.md change.

@@ -208,7 +208,7 @@ curl -fsSL .../install.sh | sh -s -- 1.3.2                 # pin a version inste
 ### Docker
 
 The [Dockerfile](Dockerfile) is a two-stage build. The binary is compiled offline
-in `golang:1.22` from the vendored sources, then copied into an empty `scratch`
+in `golang:1.27` from the vendored sources, then copied into an empty `scratch`
 image. Tavazon is static and does no DNS or TLS, so the image needs nothing else.
 
 | Image | Base | Contents | Exposes |
@@ -261,7 +261,7 @@ Every `release-*` tag is built by
 |---|:---:|:---:|:---:|
 | Linux | ✅ | ✅ | ✅ |
 | macOS | ✅ | ✅ | not available |
-| Windows | ✅ | ✅ | ✅ |
+| Windows | ✅ | ✅ | not available |
 
 Each archive contains the binary, `config.example.json`, `tavazon.service`, this
 README and the LICENSE. Only **Linux** can generate traffic, because Tavazon reads
@@ -271,7 +271,7 @@ is useful for development.
 ### Build from source
 
 The host needs only Docker. The [Makefile](Makefile) runs every Go command inside
-`golang:1.22` as your own user:
+`golang:1.27` as your own user:
 
 ```sh
 make build        # -> bin/tavazon  (static, CGO-free, built offline with -mod=vendor)
@@ -281,7 +281,7 @@ make image        # build the Docker image
 make help         # list all targets
 ```
 
-If you already have Go 1.22+ installed, `make build GO=go` uses it instead of the
+If you already have Go 1.27+ installed, `make build GO=go` uses it instead of the
 container.
 
 ## Obtaining the GeoLite2 databases

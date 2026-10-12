@@ -1,6 +1,6 @@
 # ---- build ----
 # Same image as the dev toolchain, so the host caches only one image.
-FROM golang:1.22 AS build
+FROM golang:1.27 AS build
 ARG VERSION=dev
 WORKDIR /src
 COPY . .

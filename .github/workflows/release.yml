@@ -29,10 +29,9 @@ jobs:
           # macOS (darwin) — Go has no 32-bit ARM target for darwin
           - { goos: darwin,  osname: macos,   goarch: amd64, label: x86_64 }
           - { goos: darwin,  osname: macos,   goarch: arm64, label: arm64 }
-          # windows
+          # windows — Go 1.26 removed the 32-bit windows/arm port
           - { goos: windows, osname: windows, goarch: amd64, label: x86_64 }
           - { goos: windows, osname: windows, goarch: arm64, label: arm64 }
-          - { goos: windows, osname: windows, goarch: arm,   goarm: '7', label: armv7 }
     steps:
       - uses: actions/checkout@v6
 

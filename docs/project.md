@@ -166,7 +166,7 @@ rewrite should fix:
 
 | Decision | Choice | Rationale |
 |---|---|---|
-| Language | **Go 1.22+** | Single binary, real concurrency without a GIL, excellent `net` stdlib, easy cross-compile |
+| Language | **Go 1.27+** | Single binary, real concurrency without a GIL, excellent `net` stdlib, easy cross-compile |
 | Module path | `tavazon` | — |
 | Dependencies | **One, curated & vendored:** `github.com/oschwald/maxminddb-golang` (+ its transitive closure) | Reading MaxMind `.mmdb` is the one thing not worth re-implementing. Everything else is stdlib. The dependency is **vendored** so `go build -mod=vendor` works fully offline behind a censored network. The allowlist is closed — see [RED_LINES.md](RED_LINES.md) X1 |
 | GeoIP source | **MaxMind GeoLite2-ASN + GeoLite2-Country** `.mmdb` | ASN db maps IP↔ASN; Country db lets the dashboard pre-filter the ASN picker to Iran. Files are **operator-supplied and never committed** (MaxMind EULA forbids redistribution) |
@@ -187,7 +187,7 @@ rewrite should fix:
 
 ```
 tavazon/
-├── go.mod                       # module tavazon, go 1.22
+├── go.mod                       # module tavazon, go 1.27
 ├── go.sum                       # checksums for the one vendored dependency
 ├── vendor/                      # vendored deps — COMMITTED, enables offline build
 ├── README.md                    # user-facing install + usage
@@ -1155,7 +1155,7 @@ engine) continues the loop.
 
 ```dockerfile
 # ---- build ----
-FROM golang:1.22 AS build
+FROM golang:1.27 AS build
 WORKDIR /src
 COPY . .
 RUN CGO_ENABLED=0 go build -trimpath -mod=vendor -ldflags "-s -w" -o /tavazon ./cmd/tavazon
@@ -1272,7 +1272,7 @@ All dev commands follow one pattern — a `golang` container with the repo mount
 
 ```sh
 docker run --rm -u "$(id -u):$(id -g)" -e GOCACHE=/tmp/gocache \
-  -v "$PWD":/work -w /work golang:1.22 <go command>
+  -v "$PWD":/work -w /work golang:1.27 <go command>
 ```
 
 Canonical `<go command>` values:
@@ -1288,7 +1288,7 @@ Canonical `<go command>` values:
 
 Notes:
 
-- `go test -race` needs a C toolchain, so the Debian-based **`golang:1.22`** image is
+- `go test -race` needs a C toolchain, so the Debian-based **`golang:1.27`** image is
   used — *not* `-alpine`, which ships no `gcc`.
 - `-u "$(id -u):$(id -g)"` keeps files the container writes (`vendor/`, the binary)
   owned by the host user, not root.
@@ -1304,7 +1304,7 @@ interfaces and RX/TX counters.
 
 ### 16.3 Dependencies
 
-`go.mod`: `module tavazon`, `go 1.22`, a **single `require`** —
+`go.mod`: `module tavazon`, `go 1.27`, a **single `require`** —
 `github.com/oschwald/maxminddb-golang` — vendored into `vendor/`. All builds use
 `-mod=vendor` so the build container needs **no network**. Regenerate `vendor/` with
 the `vendor` command above after any `go.mod` change. The dependency allowlist is
